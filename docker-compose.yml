@@ -1,0 +1,79 @@
+version: '3.8'
+services:
+  axioma-api:
+    build: ./api
+    container_name: aura-axioma-api
+    environment:
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_db_pwd_2026}@casmarts-core-db-primary:5432/db_core_knowledge
+      REDIS_URL: redis://casmarts-core-cache:6379/2
+    ports:
+    - 8085:8000
+    networks:
+    - aura-network
+    volumes:
+    - ./api:/app
+    - ./data:/app/data
+    - ./database:/app/database
+    - /home/ia/ecosistema-casmarts/sepomex:/app/sepomex
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+  axioma-worker:
+    build: ./api
+    container_name: aura-axioma-worker
+    command: celery -A app.core.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_db_pwd_2026}@casmarts-core-db-primary:5432/db_core_knowledge
+      REDIS_URL: redis://casmarts-core-cache:6379/2
+    networks:
+    - aura-network
+    depends_on:
+    - axioma-api
+    volumes:
+    - ./api:/app
+    - ./data:/app/data
+    - ./database:/app/database
+    - /home/ia/ecosistema-casmarts/sepomex:/app/sepomex
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+  axioma-beat:
+    build: ./api
+    container_name: aura-axioma-beat
+    command: celery -A app.core.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_db_pwd_2026}@casmarts-core-db-primary:5432/db_core_knowledge
+      REDIS_URL: redis://casmarts-core-cache:6379/2
+    networks:
+    - aura-network
+    depends_on:
+    - axioma-api
+    volumes:
+    - ./api:/app
+    - ./data:/app/data
+    - ./database:/app/database
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+  axioma-ui:
+    image: nginx:alpine
+    container_name: aura-axioma-ui
+    ports:
+    - 3085:80
+    volumes:
+    - ./ui/dist:/usr/share/nginx/html
+    networks:
+    - aura-network
+    depends_on:
+    - axioma-api
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+networks:
+  aura-network:
+    external: true
+    name: aura-network
