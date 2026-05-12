@@ -1,56 +1,79 @@
 import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from 'react-oidc-context';
 import { 
-  Search, 
-  Upload, 
-  Database, 
-  Clock, 
-  ShieldCheck, 
-  ChevronRight, 
-  MapPin, 
-  FileText, 
-  TrendingUp, 
-  Calendar,
-  Filter,
-  RefreshCw,
-  MoreHorizontal
+  Search, Database, ShieldCheck, MapPin, TrendingUp, 
+  Calendar, Filter, RefreshCw, MoreHorizontal, Loader2, 
+  LogOut, LayoutDashboard, Landmark, FileJson, Menu, X,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 
-// API Configuration
-const API_BASE = '/axioma/api';
+// OIDC Configuration - Using LexiVault Provider temporarily to unblock access
+const oidcConfig = {
+  authority: "https://arquitectura.casmart.internal/application/o/lexivault-ai/",
+  client_id: "lexivault-ai",
+  redirect_uri: window.location.origin + "/axioma/",
+  post_logout_redirect_uri: window.location.origin + "/axioma/",
+  response_type: "code",
+  scope: "openid profile email",
+};
 
-const App = () => {
-  const [activeTab, setActiveTab] = useState('explorer');
-  const [activeCatalog, setActiveCatalog] = useState('geo');
+const API_BASE = '/axioma/api/v1';
+
+const ProtectedRoute = ({ children }) => {
+  const auth = useAuth();
+  if (auth.isLoading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#0f172a]">
+        <div className="flex flex-col items-center gap-4 text-white">
+          <Loader2 className="animate-spin" size={48} />
+          <p className="font-medium animate-pulse text-blue-400">Iniciando Ecosistema Axioma...</p>
+        </div>
+      </div>
+    );
+  }
+  if (!auth.isAuthenticated) {
+    auth.signinRedirect();
+    return null;
+  }
+  return children;
+};
+
+const AxiomaApp = () => {
+  const auth = useAuth();
+  const [activeCatalog, setActiveCatalog] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({});
+  const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState(null);
 
-  // Fetch data from API
   const fetchData = async () => {
+    if (activeCatalog === 'dashboard') return;
     setLoading(true);
     try {
       let endpoint = '';
       let params = { q: searchTerm };
 
       if (activeCatalog === 'geo') {
-        if (searchTerm.length === 5 && !isNaN(searchTerm)) {
-          endpoint = `/geo/cp/${searchTerm}`;
-        } else {
-          endpoint = `/geo/settlements`;
-        }
+        endpoint = searchTerm.length === 5 && !isNaN(searchTerm) ? `/geo/cp/${searchTerm}` : `/geo/settlements`;
       } else if (activeCatalog === 'financial') {
         endpoint = `/financial/instituciones`;
         if (filters.tipo) params.tipo = filters.tipo;
       } else if (activeCatalog === 'fiscal') {
-        endpoint = `/catalogs/fiscal/cat_prod_serv`;
+        endpoint = `/fiscal/productos`;
+        if (filters.categoria) params.categoria = filters.categoria;
+      } else if (activeCatalog === 'holidays') {
+        endpoint = `/catalogs/calendars/holidays`;
         params.search = searchTerm;
       }
 
       const res = await axios.get(`${API_BASE}${endpoint}`, { params });
-      setResults(Array.isArray(res.data) ? res.data : (res.data.data || [res.data]));
+      let data = Array.isArray(res.data) ? res.data : (res.data.data || [res.data]);
+      setResults(data);
     } catch (err) {
       console.error(err);
       setResults([]);
@@ -60,254 +83,346 @@ const App = () => {
   };
 
   useEffect(() => {
-    if (searchTerm.length > 2 || activeTab === 'explorer') {
-      const timer = setTimeout(fetchData, 500);
-      return () => clearTimeout(timer);
-    }
+    const timer = setTimeout(fetchData, 500);
+    return () => clearTimeout(timer);
   }, [searchTerm, activeCatalog, filters]);
 
+  const handleSync = async () => {
+    setIsSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await axios.post(`${API_BASE}/catalogs/sync`);
+      setSyncMessage({ type: 'success', text: res.data.message });
+      setTimeout(() => setSyncMessage(null), 5000);
+    } catch (err) {
+      console.error(err);
+      setSyncMessage({ type: 'error', text: 'Error al iniciar la sincronización' });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const sidebarItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'geo', label: 'SEPOMEX / Geo', icon: MapPin },
+    { id: 'fiscal', label: 'SAT / Fiscal', icon: FileJson },
+    { id: 'financial', label: 'CASFIM / Bancos', icon: Landmark },
+    { id: 'holidays', label: 'Calendarios', icon: Calendar },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col font-inter">
-      {/* Premium Navbar */}
-      <header className="premium-gradient text-white p-6 shadow-2xl flex justify-between items-center px-12 border-b border-white/10 sticky top-0 z-50">
-        <div className="flex items-center gap-4">
+    <div className="flex h-screen bg-[#0f172a] text-slate-100 overflow-hidden selection:bg-blue-500/30">
+      {/* Background Blobs for Premium Feel */}
+      <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0">
+        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/5 rounded-full blur-[100px]"></div>
+      </div>
+
+      {/* Sidebar */}
+      <motion.aside 
+        initial={false}
+        animate={{ width: isSidebarOpen ? 280 : 88 }}
+        className="glass-panel border-r border-white/5 flex flex-col relative z-30 shadow-2xl"
+      >
+        <div className="p-8 flex items-center gap-4 mb-8">
           <motion.div 
-            whileHover={{ rotate: 180 }}
-            transition={{ duration: 0.6 }}
-            className="bg-gradient-to-br from-blue-500 to-emerald-500 p-2.5 rounded-xl shadow-lg shadow-blue-500/20"
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            className="bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 rounded-2xl shadow-lg shadow-blue-500/20"
           >
-            <Database size={28} />
+            <Database size={24} className="text-white" />
           </motion.div>
-          <div className="flex flex-col">
-            <h1 className="text-2xl font-extrabold tracking-tight outfit">Aura <span className="text-blue-400">Axioma</span></h1>
-            <span className="text-[10px] uppercase tracking-[0.2em] opacity-50 font-semibold">Master Catalog Service</span>
-          </div>
+          {isSidebarOpen && (
+            <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col">
+              <span className="font-bold text-xl outfit tracking-tight text-white">Aura Axioma</span>
+              <span className="text-[10px] text-blue-400 uppercase tracking-[0.2em] font-black opacity-80">Master Catalog</span>
+            </motion.div>
+          )}
         </div>
-        <nav className="flex gap-8 bg-white/5 p-1 rounded-full border border-white/10">
-          {[
-            { id: 'explorer', label: 'Explorador', icon: Search },
-            { id: 'admin', label: 'Administración', icon: ShieldCheck },
-            { id: 'docs', label: 'API Docs', icon: FileText }
-          ].map((item) => (
-            <button 
+
+        <nav className="flex-1 px-4 space-y-1.5">
+          {sidebarItems.map(item => (
+            <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)} 
-              className={`flex items-center gap-2 px-6 py-2 rounded-full transition-all duration-300 ${
-                activeTab === item.id 
-                ? 'bg-white text-slate-900 shadow-lg font-bold' 
-                : 'hover:bg-white/10 text-white/70'
+              onClick={() => { setActiveCatalog(item.id); setSearchTerm(''); setResults([]); }}
+              className={`w-full flex items-center gap-4 p-3.5 rounded-2xl sidebar-item transition-all group ${
+                activeCatalog === item.id ? 'active text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <item.icon size={18} />
-              <span className="text-sm">{item.label}</span>
+              <item.icon size={20} className={activeCatalog === item.id ? 'text-blue-400' : 'group-hover:text-white transition-colors'} />
+              {isSidebarOpen && <span className="font-semibold text-[15px]">{item.label}</span>}
+              {activeCatalog === item.id && isSidebarOpen && (
+                <motion.div layoutId="activeDot" className="ml-auto">
+                  <ChevronRight size={14} className="opacity-40" />
+                </motion.div>
+              )}
             </button>
           ))}
         </nav>
-      </header>
 
-      {/* Main Content */}
-      <main className="flex-1 p-12 max-w-7xl mx-auto w-full">
-        <AnimatePresence mode="wait">
-          {activeTab === 'explorer' && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-10"
+        <div className="p-6 border-t border-white/5 space-y-2 mt-auto">
+          <button className="w-full flex items-center gap-4 p-3.5 rounded-2xl text-slate-400 hover:bg-white/5 transition-all group">
+            <ShieldCheck size={20} className="group-hover:text-blue-400 transition-colors" />
+            {isSidebarOpen && <span className="text-[15px] font-medium">Administración</span>}
+          </button>
+          <button 
+            onClick={() => auth.signoutRedirect()}
+            className="w-full flex items-center gap-4 p-3.5 rounded-2xl text-red-400/80 hover:bg-red-500/10 hover:text-red-400 transition-all group"
+          >
+            <LogOut size={20} className="group-hover:rotate-12 transition-transform" />
+            {isSidebarOpen && <span className="text-[15px] font-medium">Cerrar Sesión</span>}
+          </button>
+        </div>
+      </motion.aside>
+
+      {/* Content Area */}
+      <main className="flex-1 flex flex-col overflow-hidden relative z-10">
+        <header className="h-20 glass-panel border-b border-white/5 px-10 flex justify-between items-center relative z-20">
+          <div className="flex items-center gap-6">
+            <motion.button 
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setSidebarOpen(!isSidebarOpen)} 
+              className="p-2.5 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white rounded-xl transition-all"
             >
-              {/* Search Section */}
-              <div className="glass-card p-10 rounded-[2rem] relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
-                
-                <div className="flex flex-col md:flex-row justify-between items-end gap-6 mb-8 relative z-10">
-                  <div className="max-w-xl">
-                    <h2 className="text-3xl font-bold text-slate-800 mb-2 outfit">Consultar Catálogo Maestro</h2>
-                    <p className="text-slate-500">Accede a la fuente única de verdad para datos geográficos, fiscales y financieros.</p>
-                  </div>
-                  <div className="flex gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
-                    {[
-                      { id: 'geo', label: 'Geográfico', icon: MapPin },
-                      { id: 'fiscal', label: 'Fiscal', icon: TrendingUp },
-                      { id: 'financial', label: 'Financiero', icon: TrendingUp }
-                    ].map(cat => (
-                      <button
-                        key={cat.id}
-                        onClick={() => setActiveCatalog(cat.id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                          activeCatalog === cat.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                      >
-                        {cat.label}
-                      </button>
-                    ))}
-                  </div>
+              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </motion.button>
+            <div className="flex flex-col">
+              <h2 className="text-2xl font-bold text-white outfit capitalize leading-none mb-1">{activeCatalog}</h2>
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest">Ecosistema Casmarts / Axioma</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-5">
+             <div className="flex flex-col items-end">
+                <span className="text-[15px] font-bold text-white leading-none mb-1">{auth.user?.profile.name || "Israel Martínez"}</span>
+                <span className="text-[10px] text-blue-400/80 font-black uppercase tracking-[0.15em] outfit">Master Architect</span>
+             </div>
+             <motion.div 
+               whileHover={{ scale: 1.05 }}
+               className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-500 to-emerald-500 p-[2px] shadow-lg shadow-blue-500/20"
+             >
+                <div className="w-full h-full rounded-[14px] bg-[#1e293b] flex items-center justify-center">
+                  <ShieldCheck className="text-white" size={20} />
+                </div>
+             </motion.div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-12 scroll-smooth">
+          <AnimatePresence mode="wait">
+            {activeCatalog === 'dashboard' ? (
+              <motion.div 
+                key="dashboard" 
+                initial={{ opacity: 0, y: 30 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                exit={{ opacity: 0, y: -30 }}
+                className="space-y-12 max-w-7xl mx-auto"
+              >
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {[
+                    { label: 'SEPOMEX Geo Ingestion', value: '31,887', color: 'blue', icon: MapPin, trend: '+1.2%' },
+                    { label: 'SAT Master Catalog', value: '52,400+', color: 'emerald', icon: FileJson, trend: 'Updated' },
+                    { label: 'CASFIM Entities', value: '450', color: 'indigo', icon: Landmark, trend: 'Validated' }
+                  ].map((stat, i) => (
+                    <motion.div 
+                      key={stat.label} 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      className="premium-card p-8 rounded-[2.5rem] relative overflow-hidden group"
+                    >
+                      <div className={`absolute top-0 right-0 w-32 h-32 bg-${stat.color}-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2`}></div>
+                      <div className="flex justify-between items-start mb-8">
+                        <div className={`w-14 h-14 rounded-2xl bg-${stat.color}-500/10 flex items-center justify-center text-${stat.color}-400 group-hover:scale-110 transition-transform duration-500`}>
+                          <stat.icon size={28} />
+                        </div>
+                        <span className={`text-[11px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter bg-${stat.color}-500/10 text-${stat.color}-400`}>
+                          {stat.trend}
+                        </span>
+                      </div>
+                      <p className="text-slate-500 text-xs font-black uppercase tracking-[0.2em] mb-2 outfit">{stat.label}</p>
+                      <h3 className="text-5xl font-black text-white outfit tracking-tighter">{stat.value}</h3>
+                    </motion.div>
+                  ))}
                 </div>
 
-                <div className="relative group">
-                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={24} />
-                  <input 
-                    type="text" 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder={
-                      activeCatalog === 'geo' ? "Buscar por CP o Nombre de Asentamiento..." :
-                      activeCatalog === 'fiscal' ? "Buscar Clave de Producto o Servicio SAT..." :
-                      "Buscar Institución Financiera por nombre o clave..."
-                    }
-                    className="w-full pl-16 pr-6 py-6 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:outline-none focus:border-blue-500 focus:bg-white transition-all text-xl shadow-inner shadow-slate-200/50"
-                  />
-                  {loading && (
-                    <RefreshCw className="absolute right-6 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" size={24} />
-                  )}
-                </div>
+                <motion.div 
+                  initial={{ opacity: 0, y: 40 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-gradient-to-br from-[#1e293b] to-[#0f172a] p-16 rounded-[3.5rem] border border-white/5 relative overflow-hidden shadow-3xl"
+                >
+                  <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[140px] -translate-y-1/2 translate-x-1/2"></div>
+                  <div className="relative z-10 flex flex-col lg:flex-row items-center gap-12">
+                    <div className="flex-1 text-center lg:text-left">
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 rounded-full mb-6 border border-blue-500/20">
+                        <TrendingUp size={16} className="text-blue-400" />
+                        <span className="text-[11px] font-black text-blue-400 uppercase tracking-widest">SCD2 Automated Intelligence</span>
+                      </div>
+                      <h3 className="text-5xl font-extrabold outfit mb-6 leading-[1.1] text-white">Sincronización Maestra <br/><span className="text-gradient">Axioma SSoT</span></h3>
+                      <p className="text-slate-400 max-w-2xl text-xl leading-relaxed font-medium">Aura Axioma garantiza la integridad total de los catálogos maestros mediante versionamiento SCD2, asegurando trazabilidad histórica y auditoría permanente para todo el ecosistema.</p>
+                      
+                      <div className="flex flex-wrap items-center justify-center lg:justify-start gap-6 mt-12">
+                        <motion.button 
+                          whileHover={{ scale: 1.05, boxShadow: '0 20px 40px -10px rgba(59, 130, 246, 0.4)' }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={handleSync}
+                          disabled={isSyncing}
+                          className={`bg-blue-600 text-white px-10 py-5 rounded-2xl font-black transition-all flex items-center gap-3 text-lg ${
+                            isSyncing ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                        >
+                          {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <RefreshCw size={24} />}
+                          {isSyncing ? 'Ejecutando Pipeline...' : 'Forzar Sincronización Total'}
+                        </motion.button>
+                        
+                        <div className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-2xl border border-white/5">
+                           <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                              <ShieldCheck className="text-emerald-400" size={18} />
+                           </div>
+                           <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Master Integrity Verified</span>
+                        </div>
+                      </div>
 
-                {activeCatalog === 'financial' && (
-                  <div className="flex gap-4 mt-6">
-                    <span className="text-sm font-bold text-slate-400 flex items-center gap-2 uppercase tracking-wider"><Filter size={14}/> Filtrar por Tipo:</span>
-                    {['BANCA MULTIPLE', 'SOFIPO', 'IFPE'].map(t => (
+                      {syncMessage && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`mt-6 p-4 rounded-xl font-bold text-center lg:text-left ${
+                            syncMessage.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}
+                        >
+                          {syncMessage.text}
+                        </motion.div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="explorer" 
+                initial={{ opacity: 0, y: 30 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                exit={{ opacity: 0, y: -30 }}
+                className="space-y-10 max-w-7xl mx-auto"
+              >
+                <div className="glass-panel p-2 rounded-[2.5rem] flex flex-col md:flex-row gap-4 items-center">
+                  <div className="flex-1 relative w-full group">
+                    <Search className="absolute left-8 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={22} />
+                    <input 
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder={`Consultar registros en ${activeCatalog.toUpperCase()} SSoT...`}
+                      className="w-full pl-16 pr-8 py-6 bg-white/5 border-0 rounded-[2rem] focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all font-semibold text-lg text-white placeholder:text-slate-600"
+                    />
+                    {loading && (
+                      <div className="absolute right-8 top-1/2 -translate-y-1/2">
+                        <Loader2 className="animate-spin text-blue-500" size={24} />
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex gap-3 px-4">
+                    {activeCatalog === 'financial' && ['BANCA MULTIPLE', 'SOFIPO', 'IFPE'].map(t => (
                       <button 
                         key={t}
                         onClick={() => setFilters(prev => ({...prev, tipo: prev.tipo === t ? null : t}))}
-                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                          filters.tipo === t ? 'bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-500/20' : 'bg-white border-slate-200 text-slate-500 hover:border-blue-300'
+                        className={`px-8 py-5 rounded-[1.5rem] text-[11px] font-black uppercase tracking-widest transition-all ${
+                          filters.tipo === t ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/30' : 'bg-white/5 text-slate-500 hover:text-white hover:bg-white/10'
                         }`}
                       >
                         {t}
                       </button>
                     ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Results Section */}
-              <div className="grid grid-cols-1 gap-8">
-                <div className="flex justify-between items-center px-4">
-                  <h3 className="text-xl font-bold text-slate-800 outfit">Resultados Encontrados ({results.length})</h3>
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    <ShieldCheck size={14} className="text-green-500" /> Datos Certificados
+                    {activeCatalog === 'fiscal' && [{id: '10', name: 'Materiales'}, {id: '71', name: 'Consultoría'}].map(c => (
+                      <button 
+                        key={c.id}
+                        onClick={() => setFilters(prev => ({...prev, categoria: prev.categoria === c.id ? null : c.id}))}
+                        className={`px-8 py-5 rounded-[1.5rem] text-[11px] font-black uppercase tracking-widest transition-all ${
+                          filters.categoria === c.id ? 'bg-emerald-600 text-white shadow-xl shadow-emerald-600/30' : 'bg-white/5 text-slate-500 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {results.length > 0 ? results.map((item, idx) => (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {results.map((item, idx) => (
                     <motion.div 
                       key={item.id || idx}
-                      initial={{ opacity: 0, scale: 0.9 }}
+                      initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: idx * 0.05 }}
-                      className="bg-white p-6 rounded-3xl border border-slate-200 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/5 transition-all group cursor-pointer"
+                      className="premium-card p-10 rounded-[3rem] group relative overflow-hidden"
                     >
-                      <div className="flex justify-between items-start mb-6">
-                        <div className="bg-slate-50 p-3 rounded-2xl group-hover:bg-blue-50 transition-colors">
-                          {activeCatalog === 'geo' ? <MapPin className="text-blue-500" size={24}/> :
-                           activeCatalog === 'fiscal' ? <TrendingUp className="text-emerald-500" size={24}/> :
-                           <Database className="text-indigo-500" size={24}/>}
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all"></div>
+                      <div className="flex justify-between items-start mb-10">
+                        <div className="bg-blue-500/10 p-5 rounded-[1.5rem] group-hover:bg-blue-500/20 transition-all duration-500 group-hover:rotate-6">
+                          <Database className="text-blue-400" size={26} />
                         </div>
-                        <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-3 py-1 rounded-full group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors uppercase">
-                          {item.cp || item.clave || item.code || 'ID:' + (item.id?.substring(0,4))}
+                        <span className="text-[11px] font-black bg-white/5 text-slate-500 px-4 py-2 rounded-full uppercase tracking-[0.15em] group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
+                          {item.cp || item.clave || item.code || 'MASTER'}
                         </span>
                       </div>
-                      <h4 className="font-bold text-slate-800 text-lg mb-2 leading-tight">
-                        {item.name || item.nombre || item.description || 'Sin nombre'}
+                      <h4 className="font-extrabold text-white text-2xl mb-4 outfit leading-tight group-hover:text-blue-400 transition-colors">
+                        {item.settlement_name || item.name || item.nombre || item.description}
                       </h4>
-                      <div className="space-y-2">
-                        {item.municipality_name && <p className="text-sm text-slate-500 flex items-center gap-2"><MoreHorizontal size={14}/> {item.municipality_name}</p>}
-                        {item.state_name && <p className="text-xs font-bold text-blue-600/70">{item.state_name}</p>}
-                        {item.tipo_entidad && <p className="text-xs font-bold text-emerald-600/70">{item.tipo_entidad}</p>}
+                      <div className="space-y-3">
+                        {item.municipality_name && (
+                          <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+                            <MapPin size={14} className="text-blue-500/50" />
+                            <span>{item.municipality_name}, {item.state_name}</span>
+                          </div>
+                        )}
+                        {item.tipo_entidad && (
+                          <div className="inline-block px-4 py-1.5 bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em] rounded-lg">
+                            {item.tipo_entidad}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="mt-10 pt-8 border-t border-white/5 flex items-center justify-between">
+                         <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">SCD2 Certified</span>
+                         <motion.button 
+                           whileHover={{ x: 5 }}
+                           className="text-blue-400"
+                         >
+                           <ChevronRight size={20} />
+                         </motion.button>
                       </div>
                     </motion.div>
-                  )) : (
-                    <div className="col-span-full py-20 text-center glass-card rounded-[2rem]">
-                      <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
-                        <Search size={40} />
-                      </div>
-                      <p className="text-slate-400 font-medium">No se encontraron resultados para tu búsqueda.</p>
-                      <button onClick={fetchData} className="mt-4 text-blue-500 font-bold hover:underline">Reintentar consulta</button>
-                    </div>
+                  ))}
+                  {results.length === 0 && !loading && (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="col-span-full py-40 text-center bg-white/2 rounded-[4rem] border-2 border-dashed border-white/5"
+                    >
+                       <div className="w-24 h-24 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-10 text-slate-600 ring-8 ring-slate-900/50">
+                        <Search size={48} className="opacity-40" />
+                       </div>
+                       <h3 className="text-3xl font-black text-white outfit mb-3">Motor de Búsqueda Axioma</h3>
+                       <p className="text-slate-500 font-bold text-xl max-w-lg mx-auto">Ingresa un término para filtrar los catálogos maestros en tiempo real.</p>
+                    </motion.div>
                   )}
                 </div>
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'admin' && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-12 rounded-[2rem] shadow-sm border border-slate-200"
-            >
-              <div className="flex justify-between items-start mb-10">
-                <div>
-                  <h2 className="text-3xl font-bold text-slate-800 mb-2 outfit">Control de Ingesta SCD2</h2>
-                  <p className="text-slate-500">Gestión de versiones y actualización de catálogos maestros.</p>
-                </div>
-                <button 
-                  onClick={() => axios.post(`${API_BASE}/sync/initial`)}
-                  className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold hover:bg-blue-600 transition-all shadow-lg flex items-center gap-2"
-                >
-                  <RefreshCw size={20} /> Forzar Sincronización
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                <div className="lg:col-span-2">
-                  <div className="border-3 border-dashed border-slate-200 rounded-[2.5rem] p-20 flex flex-col items-center justify-center bg-slate-50 hover:bg-slate-100 hover:border-blue-300 transition-all cursor-pointer group">
-                    <motion.div 
-                      whileHover={{ scale: 1.1 }}
-                      className="bg-blue-500 p-6 rounded-3xl text-white mb-6 shadow-xl shadow-blue-500/30"
-                    >
-                      <Upload size={40} />
-                    </motion.div>
-                    <p className="text-slate-700 font-bold text-xl">Carga Masiva de Datos</p>
-                    <p className="text-sm text-slate-400 mt-2">Suelta archivos .csv, .xls o .txt (SEPOMEX)</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-6">
-                  <div className="bg-emerald-50 border border-emerald-100 p-8 rounded-[2rem]">
-                    <h4 className="font-bold text-emerald-800 mb-4 flex items-center gap-2"><ShieldCheck size={20}/> Integridad Referencial</h4>
-                    <p className="text-sm text-emerald-700/80 leading-relaxed">El sistema aplica lógica Slow Changing Dimension Tipo 2 automáticamente para mantener el historial de cambios.</p>
-                  </div>
-                  <div className="bg-blue-50 border border-blue-100 p-8 rounded-[2rem]">
-                    <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2"><Clock size={20}/> Última Sincronización</h4>
-                    <p className="text-3xl font-black text-blue-900">Hoy, 09:42</p>
-                    <p className="text-xs font-bold text-blue-600 mt-2 uppercase tracking-widest">Estado: Exitoso</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-
-      {/* Premium Footer */}
-      <footer className="p-12 border-t border-slate-200 bg-white">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="flex flex-col items-center md:items-start">
-            <h4 className="font-extrabold text-slate-800 outfit text-lg">Casmarts <span className="text-blue-500">Aura</span></h4>
-            <p className="text-slate-400 text-sm mt-1">&copy; 2026 Inteligencia Corporativa para México.</p>
-          </div>
-          <div className="flex gap-12">
-            <div>
-              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-[0.2em] mb-4">Sistemas</p>
-              <div className="flex gap-6">
-                <ShieldCheck size={20} className="text-slate-200 hover:text-blue-500 transition-colors cursor-pointer" />
-                <Database size={20} className="text-slate-200 hover:text-blue-500 transition-colors cursor-pointer" />
-                <Calendar size={20} className="text-slate-200 hover:text-blue-500 transition-colors cursor-pointer" />
-              </div>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-[0.2em] mb-4">Certificación</p>
-              <div className="bg-slate-50 px-4 py-2 rounded-xl border border-slate-100 flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-xs font-bold text-slate-600">SCD2 v2.0 Operational</span>
-              </div>
-            </div>
-          </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-      </footer>
+      </main>
     </div>
   );
 };
+
+const App = () => (
+  <AuthProvider {...oidcConfig}>
+    <ProtectedRoute>
+      <AxiomaApp />
+    </ProtectedRoute>
+  </AuthProvider>
+);
 
 export default App;

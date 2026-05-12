@@ -39,14 +39,14 @@ graph LR
 
 ## 🛠️ Capacidades Smart
 
-### 1. Ingesta Automatizada y Scraping
-Axioma no solo almacena datos; los busca activamente. Mediante procesos de **Web Scraping** y tareas programadas, el sistema monitorea cambios en los portales del SAT y la CNBV.
+### 1. Ingesta Automatizada y AI-Powered Extraction
+Axioma no solo almacena datos; los busca activamente. Mediante el **CasfimProcessor**, el sistema monitorea el portal de la SHCP, descarga los catálogos PDF oficiales y utiliza **Docling (AI Document Parsing)** para convertir tablas complejas en datos estructurados. Esto elimina la necesidad de carga manual y garantiza que los catálogos financieros estén siempre sincronizados con la fuente oficial.
 
 ### 2. Slowly Changing Dimensions (SCD2)
-Mantenemos la soberanía histórica. Cada cambio en un código postal o una clave bancaria no sobreescribe el dato anterior, sino que crea una nueva versión con periodos de validez, permitiendo auditorías retroactivas.
+Mantenemos la soberanía histórica. Cada cambio en un código postal o una clave bancaria no sobreescribe el dato anterior, sino que crea una nueva versión con periodos de validez, permitiendo auditorías retroactivas. El `SCD2Manager` gestiona este proceso de forma transparente para el desarrollador.
 
-### 3. Inteligencia Artificial (LangChain Agent)
-Integrado con agentes de lenguaje natural para permitir el descubrimiento de claves y catálogos sin necesidad de búsquedas manuales complejas.
+### 3. Inteligencia Artificial (LangChain & Flowise)
+Integrado con agentes de lenguaje natural para permitir el descubrimiento de claves y catálogos. Axioma expone sus datos a la capa semántica del ecosistema, permitiendo que agentes orquestados en **Flowise** realicen consultas inteligentes sobre la normativa y catálogos vigentes.
 
 ## 🔄 Flujo de Datos SCD2
 

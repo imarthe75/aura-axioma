@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from sqlalchemy import text
 from app.services.scd2_manager import SCD2Manager
+from app.services.catalog_downloader import CatalogDownloader
 from typing import List, Optional, Dict, Any
 
 router = APIRouter()
@@ -33,6 +35,19 @@ async def list_available_catalogs():
         "ssot_version": "2026.1",
         "available_schemas": CATALOGS
     }
+
+@router.get("/calendario/festivos", tags=["Catálogos"])
+async def get_festivos(year: Optional[int] = None):
+    """Obtener lista de días festivos oficiales"""
+    if not year:
+        from datetime import date
+        year = date.today().year
+    
+    manager = SCD2Manager(target_table="holidays", natural_key="date", schema="calendars")
+    # Simple query for holidays in the given year
+    with manager.engine.connect() as conn:
+        result = conn.execute(text("SELECT date, name FROM calendars.holidays WHERE EXTRACT(YEAR FROM date) = :year AND scd_is_current = TRUE ORDER BY date"), {"year": year})
+        return result.mappings().all()
 
 @router.get("/{schema}/{table}", tags=["Catalogs"])
 async def get_catalog_data(
@@ -76,3 +91,20 @@ async def get_catalog_data(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
+@router.post("/sync", tags=["Catalogs"])
+async def trigger_catalog_sync():
+    """
+    Trigger a full synchronization of all master catalogs.
+    This task runs asynchronously via Celery.
+    """
+    try:
+        # Trigger the Celery task
+        task = CatalogDownloader.sync_all_catalogs.delay()
+        return {
+            "status": "sync_triggered",
+            "task_id": task.id,
+            "message": "Synchronization process started in background."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to trigger sync: {str(e)}")

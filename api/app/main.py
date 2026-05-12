@@ -43,7 +43,7 @@ app.add_middleware(
 )
 
 from app.api.v1.api import api_router
-app.include_router(api_router)
+app.include_router(api_router, prefix="/v1")
 
 @app.get("/")
 async def root():
