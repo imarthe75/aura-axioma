@@ -13,11 +13,11 @@ app = FastAPI(
     title="Aura Axioma",
     description="Single Source of Truth for Master Catalogs (Geo, Fiscal, Financial) with SCD2 support.",
     version="1.0.0",
-    root_path="/axioma/api",
-    servers=[{"url": "/axioma/api", "description": "Production Gateway"}]
+    root_path="/api",
+    servers=[{"url": "https://axioma.casmart.internal/api", "description": "Production Gateway"}]
 )
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://arquitectura.casmart.internal/application/o/token/")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://auth.casmart.internal/application/o/token/")
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     # Authentik OIDC Validation Logic
