@@ -9,17 +9,17 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 
-// OIDC Configuration - Using LexiVault Provider temporarily to unblock access
+// OIDC Configuration - Dedicated Axioma Provider
 const oidcConfig = {
-  authority: "https://arquitectura.casmart.internal/application/o/lexivault-ai/",
-  client_id: "lexivault-ai",
-  redirect_uri: window.location.origin + "/axioma/",
-  post_logout_redirect_uri: window.location.origin + "/axioma/",
+  authority: "https://auth.casmart.internal/application/o/axioma/",
+  client_id: "axioma",
+  redirect_uri: window.location.origin,
+  post_logout_redirect_uri: window.location.origin,
   response_type: "code",
   scope: "openid profile email",
 };
 
-const API_BASE = '/axioma/api/v1';
+const API_BASE = '/api/v1';
 
 const ProtectedRoute = ({ children }) => {
   const auth = useAuth();
@@ -50,6 +50,20 @@ const AxiomaApp = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState(null);
+  const [stats, setStats] = useState({ geo: '...', fiscal: '...', financial: '...', calendars: '...' });
+
+  const fetchStats = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/catalogs/stats`);
+      setStats(res.data);
+    } catch (err) {
+      console.error("Failed to fetch stats", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   const fetchData = async () => {
     if (activeCatalog === 'dashboard') return;
@@ -219,9 +233,9 @@ const AxiomaApp = () => {
               >
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   {[
-                    { label: 'SEPOMEX Geo Ingestion', value: '31,887', color: 'blue', icon: MapPin, trend: '+1.2%' },
-                    { label: 'SAT Master Catalog', value: '52,400+', color: 'emerald', icon: FileJson, trend: 'Updated' },
-                    { label: 'CASFIM Entities', value: '450', color: 'indigo', icon: Landmark, trend: 'Validated' }
+                    { label: 'SEPOMEX Geo Ingestion', value: (stats.geo || 0).toLocaleString(), color: 'blue', icon: MapPin, trend: '+1.2%' },
+                    { label: 'SAT Master Catalog', value: (stats.fiscal || 0).toLocaleString(), color: 'emerald', icon: FileJson, trend: 'Updated' },
+                    { label: 'CASFIM Entities', value: (stats.financial || 0).toLocaleString(), color: 'indigo', icon: Landmark, trend: 'Validated' }
                   ].map((stat, i) => (
                     <motion.div 
                       key={stat.label} 
@@ -367,20 +381,54 @@ const AxiomaApp = () => {
                         </span>
                       </div>
                       <h4 className="font-extrabold text-white text-2xl mb-4 outfit leading-tight group-hover:text-blue-400 transition-colors">
-                        {item.settlement_name || item.name || item.nombre || item.description}
+                        {item.asentamiento || item.nombre || item.descripcion || item.name || item.description}
                       </h4>
-                      <div className="space-y-3">
-                        {item.municipality_name && (
-                          <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
-                            <MapPin size={14} className="text-blue-500/50" />
-                            <span>{item.municipality_name}, {item.state_name}</span>
+                      <div className="space-y-4">
+                        {/* Geo Data */}
+                        {(item.municipio || item.estado) && (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                              <MapPin size={12} className="text-blue-500" />
+                              <span>Ubicación</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-300 pl-5">
+                              {item.municipio}, {item.estado}
+                            </p>
                           </div>
                         )}
-                        {item.tipo_entidad && (
-                          <div className="inline-block px-4 py-1.5 bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em] rounded-lg">
-                            {item.tipo_entidad}
+                        {/* Fiscal Data */}
+                        {item.clave_unidad && (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                              <FileJson size={12} className="text-emerald-500" />
+                              <span>Detalle Fiscal</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-300 pl-5">
+                              Unidad: {item.clave_unidad} | IVA: {item.impuesto_iva ? 'Sí' : 'No'}
+                            </p>
                           </div>
                         )}
+                        {/* Financial Data */}
+                        {item.razon_social && (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                              <Landmark size={12} className="text-indigo-500" />
+                              <span>Razón Social</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-300 pl-5">
+                              {item.razon_social}
+                            </p>
+                          </div>
+                        )}
+                        {/* Status Label */}
+                        <div className="flex items-center gap-3 mt-4">
+                           <div className="inline-block px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[9px] font-black uppercase tracking-[0.2em] rounded-md border border-emerald-500/20">
+                             ACTIVO
+                           </div>
+                           <div className="inline-block px-3 py-1 bg-blue-500/10 text-blue-400 text-[9px] font-black uppercase tracking-[0.2em] rounded-md border border-blue-500/20">
+                             SSOT VERIFIED
+                           </div>
+                        </div>
                       </div>
                       
                       <div className="mt-10 pt-8 border-t border-white/5 flex items-center justify-between">
