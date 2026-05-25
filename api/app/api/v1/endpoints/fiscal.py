@@ -41,6 +41,14 @@ async def get_productos_hierarchy(
     """
     manager = SCD2Manager(target_table="cat_prod_serv", natural_key="code", schema="fiscal")
     
+    if parent_code and len(parent_code) == 8:
+        if parent_code.endswith('000000'):
+            parent_code = parent_code[:2]
+        elif parent_code.endswith('0000'):
+            parent_code = parent_code[:4]
+        elif parent_code.endswith('00'):
+            parent_code = parent_code[:6]
+
     if not parent_code:
         # Nivel 1: Divisiones (ej. 10000000, 20000000)
         query = text("""
@@ -85,7 +93,7 @@ async def get_productos_hierarchy(
         """)
         params = {"prefix": parent_code}
     else:
-        raise HTTPException(status_code=400, detail="Formato de parent_code inválido. Debe ser de 2, 4 o 6 dígitos.")
+        raise HTTPException(status_code=400, detail="Formato de parent_code inválido. Debe ser de 2, 4 o 6 dígitos (o 8 dígitos con sufijos de ceros).")
         
     with manager.engine.connect() as conn:
         result = conn.execute(query, params)
