@@ -383,7 +383,7 @@ function GeoCascade() {
               className="civika-select w-full disabled:opacity-40"
             >
               <option value="">Selecciona Asentamiento...</option>
-              {settlements.map(s => <option key={s.id} value={s.id}>{s.nombre} ({s.tipo})</option>)}
+              {settlements.map(s => <option key={s.id} value={s.id}>[{s.codigo_postal}] {s.nombre} ({s.tipo})</option>)}
             </select>
           </div>
         </div>

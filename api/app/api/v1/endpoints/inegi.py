@@ -8,7 +8,8 @@ router = APIRouter()
 
 @router.get("/localidades", tags=["INEGI"])
 async def obtener_localidades(
-    municipio_id: Optional[str] = Query(None, description="UUID del municipio"),
+    municipio_id: Optional[str] = Query(None, description="UUID del municipio (Spanish)"),
+    municipality_id: Optional[str] = Query(None, description="UUID del municipio (English)"),
     q: Optional[str] = Query(None, description="Nombre de la localidad"),
     current_user: dict = Depends(get_current_user)
 ):
@@ -18,9 +19,10 @@ async def obtener_localidades(
     """
     manager = SCD2Manager(target_table="localidades", natural_key="clave_localidad", schema="inegi")
     
+    m_id = municipio_id or municipality_id
     filters = {}
-    if municipio_id:
-        filters["municipality_id"] = municipio_id
+    if m_id:
+        filters["municipality_id"] = m_id
         
     return manager.search(search_term=q, limit=100, **filters)
 
