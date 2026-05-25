@@ -63,6 +63,7 @@ const AxiomaApp = () => {
   const [stats, setStats] = useState({ geo: '...', fiscal: '...', financial: '...', calendars: '...' });
 
   const fetchStats = async () => {
+    if (!auth.user?.access_token) return;
     try {
       const res = await axios.get(`${API_BASE}/catalogs/stats`);
       setStats(res.data);
@@ -72,11 +73,14 @@ const AxiomaApp = () => {
   };
 
   useEffect(() => {
-    fetchStats();
-  }, []);
+    if (auth.user?.access_token) {
+      fetchStats();
+    }
+  }, [auth.user]);
 
   const fetchData = async () => {
     if (activeCatalog === 'dashboard') return;
+    if (!auth.user?.access_token) return;
     setLoading(true);
     try {
       let endpoint = '';
@@ -107,9 +111,11 @@ const AxiomaApp = () => {
   };
 
   useEffect(() => {
-    const timer = setTimeout(fetchData, 500);
-    return () => clearTimeout(timer);
-  }, [searchTerm, activeCatalog, filters]);
+    if (auth.user?.access_token) {
+      const timer = setTimeout(fetchData, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [searchTerm, activeCatalog, filters, auth.user]);
 
   const handleSync = async () => {
     setIsSyncing(true);
