@@ -6,6 +6,9 @@ services:
     environment:
       DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_db_pwd_2026}@casmarts-core-db-primary:5432/db_core_knowledge
       REDIS_URL: redis://casmarts-core-cache:6379/2
+      AUTHENTIK_URL: https://auth.casmart.internal
+      AUTHENTIK_CLIENT_ID: axioma
+      AUTHENTIK_INTERNAL_URL: http://casmarts-core-authentik-server:9000
     ports:
     - 8085:8000
     networks:

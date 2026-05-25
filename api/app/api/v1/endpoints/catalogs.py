@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import text
 from app.services.scd2_manager import SCD2Manager
 from app.services.catalog_downloader import CatalogDownloader
+from app.core.auth import get_current_user
 from typing import List, Optional, Dict, Any
 
 router = APIRouter()
@@ -25,7 +26,7 @@ NATURAL_KEYS = {
 }
 
 @router.get("/", tags=["Catalogs"])
-async def list_available_catalogs():
+async def list_available_catalogs(current_user: dict = Depends(get_current_user)):
     """
     List all available catalog schemas and tables.
     Developers should use this to discover what SSoT data is synchronized.
@@ -37,7 +38,7 @@ async def list_available_catalogs():
     }
 
 @router.get("/calendario/festivos", tags=["Catálogos"])
-async def get_festivos(year: Optional[int] = None):
+async def get_festivos(year: Optional[int] = None, current_user: dict = Depends(get_current_user)):
     """Obtener lista de días festivos oficiales"""
     if not year:
         from datetime import date
@@ -51,11 +52,12 @@ async def get_festivos(year: Optional[int] = None):
 
 @router.get("/{schema}/{table}", tags=["Catalogs"])
 async def get_catalog_data(
-    schema: str, 
-    table: str, 
+    schema: str,
+    table: str,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Query current records from a specific catalog table.
@@ -93,7 +95,7 @@ async def get_catalog_data(
         raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
 
 @router.get("/stats", tags=["Catalogs"])
-async def get_catalogs_stats():
+async def get_catalogs_stats(current_user: dict = Depends(get_current_user)):
     """
     Get real-time record counts for all master catalogs.
     """
@@ -125,7 +127,7 @@ async def get_catalogs_stats():
     return stats
 
 @router.post("/sync", tags=["Catalogs"])
-async def trigger_catalog_sync():
+async def trigger_catalog_sync(current_user: dict = Depends(get_current_user)):
     """
     Trigger a full synchronization of all master catalogs.
     This task runs asynchronously via Celery.

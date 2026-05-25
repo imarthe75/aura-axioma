@@ -17,3 +17,4 @@ langchain-community==0.3.0
 beautifulsoup4==4.12.3
 lxml==5.3.0
 fastapi-cache2[redis]==0.2.2
+PyJWT[crypto]==2.9.0

@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from app.services.scd2_manager import SCD2Manager
+from app.core.auth import get_current_user
 from typing import List, Optional
 from sqlalchemy import text
 
@@ -8,7 +9,8 @@ router = APIRouter()
 @router.get("/localidades", tags=["INEGI"])
 async def obtener_localidades(
     municipio_id: Optional[str] = Query(None, description="UUID del municipio"),
-    q: Optional[str] = Query(None, description="Nombre de la localidad")
+    q: Optional[str] = Query(None, description="Nombre de la localidad"),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Listar localidades de INEGI.
@@ -23,7 +25,7 @@ async def obtener_localidades(
     return manager.search(search_term=q, limit=100, **filters)
 
 @router.get("/georeferencia", tags=["INEGI"])
-async def obtener_georeferencia(lat: float, lon: float, radio_km: float = 1.0):
+async def obtener_georeferencia(lat: float, lon: float, radio_km: float = 1.0, current_user: dict = Depends(get_current_user)):
     """
     Buscar la localidad de INEGI más cercana por coordenadas.
     """

@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Depends, HTTPException, Security
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.init_db import init_db
+from app.core.auth import get_current_user
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis import asyncio as aioredis
@@ -16,14 +16,6 @@ app = FastAPI(
     root_path="/api",
     servers=[{"url": "https://axioma.casmart.internal/api", "description": "Production Gateway"}]
 )
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://auth.casmart.internal/application/o/token/")
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    # Authentik OIDC Validation Logic
-    if not token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    return {"user": "authenticated_via_authentik"}
 
 @app.on_event("startup")
 async def startup_event():
@@ -54,7 +46,7 @@ async def health():
     return {"status": "healthy"}
 
 @app.post("/sync/initial", tags=["Admin"])
-async def trigger_initial_sync():
+async def trigger_initial_sync(current_user: dict = Depends(get_current_user)):
     """Trigger the initial sync of all catalogs (Holidays, SEPOMEX, SAT, CASFIM)"""
     CatalogDownloader.sync_all_catalogs.delay()
     return {"status": "initial_sync_triggered"}

@@ -1,10 +1,136 @@
 @import "tailwindcss";
 
 @theme {
-  --color-axioma-gold: #d4af37;
-  --color-axioma-dark: #1a202c;
+  --color-brand: #1a3a5c;
+  --color-brand-hover: #142e4a;
+  --color-brand-light: rgba(26, 58, 92, 0.08);
+  --color-brand-glow: rgba(26, 58, 92, 0.16);
+  --color-brand-on: #ffffff;
+  
+  --radius-atom: 8px;
+  --radius-organism: 14px;
+  --radius-container: 20px;
+  
+  --font-civika: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono-civika: 'DM Mono', 'Cascadia Code', monospace;
 }
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Colors */
+  --brand: #1a3a5c;
+  --brand-hover: #142e4a;
+  --brand-light: rgba(26, 58, 92, 0.08);
+  --brand-glow: rgba(26, 58, 92, 0.16);
+  --brand-on: #ffffff;
+  
+  /* Semantic */
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --ok-border: #dcfce7;
+  
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --err-border: #fee2e2;
+  
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --warn-border: #fef3c7;
+  
+  --info: #1d4ed8;
+  --info-bg: #eff6ff;
+  --info-border: #dbeafe;
+
+  /* Typo */
+  font-family: 'DM Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Premium Civic Component Classes */
+.civika-card {
+  background: rgba(30, 41, 59, 0.4);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px; /* var(--radius-organism) */
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.civika-card:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 41, 59, 0.55);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+.civika-input {
+  height: 44px; /* WCAG touch target base */
+  border-radius: 8px; /* var(--radius-atom) */
+  background: rgba(15, 23, 42, 0.7);
+  border: 1.5px solid rgba(255, 255, 255, 0.06);
+  padding: 0 16px;
+  font-family: 'DM Sans', sans-serif;
+  color: #ffffff;
+  font-size: 15px;
+  transition: all 0.2s ease;
+}
+
+.civika-input:focus {
+  outline: none;
+  border-color: #1a3a5c;
+  box-shadow: 0 0 0 3px rgba(26, 58, 92, 0.2);
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.civika-select {
+  height: 44px; /* WCAG touch target base */
+  border-radius: 8px; /* var(--radius-atom) */
+  background: rgba(15, 23, 42, 0.7);
+  border: 1.5px solid rgba(255, 255, 255, 0.06);
+  padding: 0 16px;
+  font-family: 'DM Sans', sans-serif;
+  color: #ffffff;
+  font-size: 15px;
+  transition: all 0.2s ease;
+}
+
+.civika-select:focus {
+  outline: none;
+  border-color: #1a3a5c;
+  box-shadow: 0 0 0 3px rgba(26, 58, 92, 0.2);
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.civika-btn {
+  height: 44px; /* WCAG touch target base */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 8px; /* var(--radius-atom) */
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.civika-btn-primary {
+  background: #1a3a5c;
+  color: #ffffff;
+  border: none;
+}
+
+.civika-btn-primary:hover:not(:disabled) {
+  background: #142e4a;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(26, 58, 92, 0.25);
+}
+
+.civika-btn-secondary {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  border: 1.5px solid rgba(255, 255, 255, 0.06);
+}
+
+.civika-btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
 }

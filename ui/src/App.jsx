@@ -4,10 +4,11 @@ import {
   Search, Database, ShieldCheck, MapPin, TrendingUp, 
   Calendar, Filter, RefreshCw, MoreHorizontal, Loader2, 
   LogOut, LayoutDashboard, Landmark, FileJson, Menu, X,
-  ChevronRight
+  ChevronRight, Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import AuraShowcase from './components/AuraShowcase';
 
 // OIDC Configuration - Dedicated Axioma Provider
 const oidcConfig = {
@@ -42,6 +43,15 @@ const ProtectedRoute = ({ children }) => {
 
 const AxiomaApp = () => {
   const auth = useAuth();
+  
+  useEffect(() => {
+    if (auth.user?.access_token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${auth.user.access_token}`;
+    } else {
+      delete axios.defaults.headers.common['Authorization'];
+    }
+  }, [auth.user]);
+
   const [activeCatalog, setActiveCatalog] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState([]);
@@ -118,6 +128,7 @@ const AxiomaApp = () => {
 
   const sidebarItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'showcase', label: 'Showcase SSoT', icon: Compass },
     { id: 'geo', label: 'SEPOMEX / Geo', icon: MapPin },
     { id: 'fiscal', label: 'SAT / Fiscal', icon: FileJson },
     { id: 'financial', label: 'CASFIM / Bancos', icon: Landmark },
@@ -311,6 +322,8 @@ const AxiomaApp = () => {
                   </div>
                 </motion.div>
               </motion.div>
+            ) : activeCatalog === 'showcase' ? (
+              <AuraShowcase key="showcase" />
             ) : (
               <motion.div 
                 key="explorer" 

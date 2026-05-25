@@ -1,27 +1,128 @@
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from app.services.scd2_manager import SCD2Manager
+from app.core.auth import get_current_user
 from typing import List, Optional
 from sqlalchemy import text
 
 router = APIRouter()
 
-@router.get("/codigo-postal/{cp}", tags=["Geografía"])
-async def obtener_detalles_cp(cp: str):
+@router.get("/paises", tags=["Geografía"])
+async def obtener_paises(q: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Listar o buscar Países (Catálogo Global)"""
+    manager = SCD2Manager(target_table="paises", natural_key="iso_alpha3", schema="geo")
+    return manager.search(search_term=q, limit=250)
+
+@router.get("/estados", tags=["Geografía"])
+async def obtener_estados(
+    pais_id: Optional[str] = Query(None, description="Filtrar por UUID del país sucesor"),
+    q: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Listar Estados de México, opcionalmente filtrados por país"""
+    manager = SCD2Manager(target_table="estados", natural_key="state_code", schema="geo")
+    filters = {}
+    if pais_id:
+        filters["country_id"] = pais_id
+    return manager.search(search_term=q, limit=50, **filters)
+
+@router.get("/municipios", tags=["Geografía"])
+async def obtener_municipios(
+    estado_id: Optional[str] = Query(None, description="Filtrar por UUID del estado"),
+    q: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Listar Municipios filtrados por estado o nombre"""
+    manager = SCD2Manager(target_table="municipios", natural_key="municipality_code", schema="geo")
+    filters = {}
+    if estado_id:
+        filters["state_id"] = estado_id
+    res = manager.search(search_term=q, limit=100, **filters)
+    return sorted(res, key=lambda x: x.get("name", ""))
+
+@router.get("/asentamientos", tags=["Geografía"])
+async def obtener_asentamientos(
+    municipio_id: Optional[str] = Query(None, description="Filtrar por UUID del municipio"),
+    q: Optional[str] = Query(None, description="Término para búsqueda predictiva Fuzzy (trigram)"),
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Obtener detalles de un Código Postal (CP) en cascada:
-    Devuelve asentamientos, municipio, estado y país asociados.
+    Listar o buscar Asentamientos (Colonias) en cascada o de forma predictiva global.
+    Si se provee 'q', ejecuta una búsqueda Fuzzy acelerada por el índice pg_trgm en Postgres.
+    """
+    manager = SCD2Manager(target_table="asentamientos", natural_key="id", schema="geo")
+    
+    if q and len(q) >= 2:
+        # Búsqueda predictiva Fuzzy (Trigram) global en la vista georelacional
+        # pg_trgm acelera automáticamente las comparaciones ILIKE '%term%' en Postgres 18
+        query = text("""
+            SELECT 
+                asentamiento_id as id,
+                codigo_postal as cp,
+                asentamiento as nombre,
+                tipo_asentamiento as tipo,
+                zona,
+                municipio,
+                municipio_id,
+                estado,
+                estado_id,
+                pais,
+                pais_id
+            FROM geo.vw_geografia_mexico
+            WHERE asentamiento ILIKE :q OR codigo_postal ILIKE :q
+            LIMIT 50
+        """)
+        with manager.engine.connect() as conn:
+            result = conn.execute(query, {"q": f"%{q}%"})
+            return [dict(row._asdict()) for row in result]
+            
+    # De lo contrario, filtrado normal por municipio (cascada)
+    filters = {}
+    if municipio_id:
+        filters["municipality_id"] = municipio_id
+        
+    # Obtener colonias uniendo tipos de asentamiento y zonas
+    query = text("""
+        SELECT 
+            a.id,
+            a.name as nombre,
+            at.name as tipo,
+            zt.name as zona,
+            cp.cp as codigo_postal
+        FROM geo.asentamientos a
+        JOIN geo.asentamiento_tipos at ON a.asentamiento_tipo_id = at.id
+        JOIN geo.zona_tipos zt ON a.zona_tipo_id = zt.id
+        JOIN geo.codigos_postales cp ON a.cp_id = cp.id
+        WHERE a.scd_is_current = TRUE
+          AND (CAST(:municipio_id AS uuid) IS NULL OR a.municipality_id = CAST(:municipio_id AS uuid))
+        ORDER BY a.name
+        LIMIT 100
+    """)
+    with manager.engine.connect() as conn:
+        result = conn.execute(query, {"municipio_id": municipio_id})
+        return [dict(row._asdict()) for row in result]
+
+@router.get("/codigo-postal/{cp}", tags=["Geografía"])
+async def obtener_detalles_cp(cp: str, current_user: dict = Depends(get_current_user)):
+    """
+    Búsqueda Inversa por Código Postal (CP).
+    Devuelve los detalles de ubicación común (País, Estado, Municipio) y una lista 
+    dinámica de asentamientos asociados a ese CP para selección en frontend.
     """
     manager = SCD2Manager(target_table="codigos_postales", natural_key="cp", schema="geo")
     
     query = text("""
         SELECT 
-            codigo_postal,
-            asentamiento,
-            tipo_asentamiento,
+            asentamiento_id as id,
+            codigo_postal as cp,
+            asentamiento as nombre,
+            tipo_asentamiento as tipo,
             zona,
             municipio,
+            municipio_id,
             estado,
+            estado_id,
             pais,
+            pais_id,
             codigo_telefonico
         FROM geo.vw_geografia_mexico
         WHERE codigo_postal = :cp
@@ -36,54 +137,21 @@ async def obtener_detalles_cp(cp: str):
         
     first = rows[0]
     return {
-        "codigo_postal": first["codigo_postal"],
+        "codigo_postal": first["cp"],
         "pais": first["pais"],
+        "pais_id": first["pais_id"],
         "codigo_telefonico": first["codigo_telefonico"],
         "estado": first["estado"],
+        "estado_id": first["estado_id"],
         "municipio": first["municipio"],
+        "municipio_id": first["municipio_id"],
         "asentamientos": [
             {
-                "nombre": r["asentamiento"], 
-                "tipo": r["tipo_asentamiento"],
+                "id": r["id"], 
+                "nombre": r["nombre"], 
+                "tipo": r["tipo"],
                 "zona": r["zona"]
             } 
             for r in rows
         ]
     }
-
-@router.get("/paises", tags=["Geografía"])
-async def obtener_paises(q: Optional[str] = None):
-    """Listar o buscar Países (Catálogo Global)"""
-    manager = SCD2Manager(target_table="paises", natural_key="iso_alpha3", schema="geo")
-    return manager.search(search_term=q, limit=250)
-
-@router.get("/estados", tags=["Geografía"])
-async def obtener_estados(q: Optional[str] = None):
-    """Listar o buscar Estados de México"""
-    manager = SCD2Manager(target_table="estados", natural_key="state_code", schema="geo")
-    return manager.search(search_term=q, limit=50)
-
-@router.get("/municipios", tags=["Geografía"])
-async def obtener_municipios(estado: Optional[str] = None, q: Optional[str] = None):
-    """Listar Municipios filtrados por estado o nombre"""
-    manager = SCD2Manager(target_table="municipios", natural_key="municipality_code", schema="geo")
-    filters = {}
-    if estado:
-        filters["state_id"] = estado
-    return manager.search(search_term=q, limit=100, **filters)
-
-@router.get("/asentamientos", tags=["Geografía"])
-async def buscar_asentamientos(q: str = Query(..., min_length=3, description="Nombre de colonia o CP")):
-    """Buscar Asentamientos (Colonias) por nombre o Código Postal"""
-    manager = SCD2Manager(target_table="asentamientos", natural_key="id", schema="geo")
-    
-    query = text("""
-        SELECT *
-        FROM geo.vw_geografia_mexico
-        WHERE asentamiento ILIKE :q OR codigo_postal ILIKE :q
-        LIMIT 50
-    """)
-    
-    with manager.engine.connect() as conn:
-        result = conn.execute(query, {"q": f"%{q}%"})
-        return [dict(row._asdict()) for row in result]

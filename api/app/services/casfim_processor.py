@@ -4,7 +4,6 @@ import re
 import logging
 from bs4 import BeautifulSoup
 import pandas as pd
-from docling.document_converter import DocumentConverter
 from app.services.scd2_manager import SCD2Manager
 from sqlalchemy import text
 
@@ -12,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 
 class CasfimProcessor:
     BASE_URL = "https://www.gob.mx"
-    DATA_DIR = "/home/ia/ecosistema-casmarts/aura-axioma/data/casfim"
+    DATA_DIR = "/app/data/casfim" if os.path.exists("/app/data") else "/home/ia/ecosistema-casmarts/aura-axioma/data/casfim"
     PDF_DIR = os.path.join(DATA_DIR, "pdfs")
     PROCESSED_DIR = os.path.join(DATA_DIR, "processed")
 
@@ -20,7 +19,6 @@ class CasfimProcessor:
         print(f"Initializing CasfimProcessor. Data dir: {self.DATA_DIR}")
         os.makedirs(self.PDF_DIR, exist_ok=True)
         os.makedirs(self.PROCESSED_DIR, exist_ok=True)
-        self.converter = DocumentConverter()
 
     def get_links_from_html(self, html_path):
         """Extract sector names and PDF links from HTML"""
@@ -86,7 +84,7 @@ class CasfimProcessor:
         return links
 
     def process_with_docling(self, links):
-        """Convert PDFs to markdown using docling"""
+        """Convert PDFs to markdown using docling REST API"""
         processed_data = []
         for item in links:
             if 'local_path' not in item: continue
@@ -95,14 +93,27 @@ class CasfimProcessor:
             output_path = os.path.join(self.PROCESSED_DIR, output_name)
             
             if not os.path.exists(output_path):
-                logging.info(f"Processing {item['local_path']} with Docling...")
+                logging.info(f"Processing {item['local_path']} via Docling REST API...")
                 try:
-                    result = self.converter.convert(item['local_path'])
-                    markdown = result.document.export_to_markdown()
-                    with open(output_path, 'w', encoding='utf-8') as f:
-                        f.write(markdown)
+                    with open(item['local_path'], 'rb') as f:
+                        files = {'files': (os.path.basename(item['local_path']), f, 'application/pdf')}
+                        response = requests.post(
+                            "http://casmarts-core-docling:5001/v1/convert/file",
+                            files=files,
+                            timeout=180
+                        )
+                    
+                    if response.status_code == 200:
+                        res_json = response.json()
+                        markdown = res_json.get("document", {}).get("md_content") or ""
+                        with open(output_path, 'w', encoding='utf-8') as f_out:
+                            f_out.write(markdown)
+                        logging.info(f"Successfully processed {item['local_path']} via Docling REST API.")
+                    else:
+                        logging.error(f"Docling REST API failed for {item['local_path']} with status {response.status_code}: {response.text}")
+                        continue
                 except Exception as e:
-                    logging.error(f"Docling failed for {item['local_path']}: {e}")
+                    logging.error(f"Docling API connection failed for {item['local_path']}: {e}")
                     continue
             
             item['markdown_path'] = output_path
@@ -181,7 +192,7 @@ class CasfimProcessor:
 
 if __name__ == "__main__":
     processor = CasfimProcessor()
-    html_path = "/home/ia/.gemini/antigravity/brain/2327746d-a199-4d1a-a45c-f26fc6209bb4/scratch/casfim_links.html"
+    html_path = "/app/casfim_links.html"
     links = processor.get_links_from_html(html_path)
     links = processor.download_pdfs(links)
     processed = processor.process_with_docling(links)
