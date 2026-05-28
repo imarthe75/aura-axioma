@@ -197,6 +197,7 @@ function GeoCascade() {
   const [countries, setCountries] = useState([]);
   const [states, setStates] = useState([]);
   const [municipalities, setMunicipalities] = useState([]);
+  const [cps, setCps] = useState([]);
   const [settlements, setSettlements] = useState([]);
   const [inegiLocalities, setInegiLocalities] = useState([]);
   const [loadingInegi, setLoadingInegi] = useState(false);
@@ -204,6 +205,7 @@ function GeoCascade() {
   const [selectedCountry, setSelectedCountry] = useState('');
   const [selectedState, setSelectedState] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState('');
+  const [selectedCp, setSelectedCp] = useState('');
   const [selectedSettlement, setSelectedSettlement] = useState('');
   const [settlementDetails, setSettlementDetails] = useState(null);
 
@@ -238,6 +240,7 @@ function GeoCascade() {
         setStates(Array.isArray(res.data) ? res.data : []);
         setSelectedState('');
         setSelectedMunicipality('');
+        setSelectedCp('');
         setSelectedSettlement('');
         setSettlementDetails(null);
       } catch (err) {
@@ -259,6 +262,7 @@ function GeoCascade() {
         const res = await axios.get(`${API_BASE}/geo/municipios`, { params: { estado_id: selectedState } });
         setMunicipalities(Array.isArray(res.data) ? res.data : []);
         setSelectedMunicipality('');
+        setSelectedCp('');
         setSelectedSettlement('');
         setSettlementDetails(null);
       } catch (err) {
@@ -269,7 +273,29 @@ function GeoCascade() {
     fetchMunicipalities();
   }, [selectedState]);
 
-  // Cargar Asentamientos al cambiar Municipio
+  // Cargar Código Postal (CP) al cambiar Municipio
+  useEffect(() => {
+    if (!selectedMunicipality) {
+      setCps([]);
+      setSelectedCp('');
+      return;
+    }
+    const fetchCps = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/geo/codigos-postales`, { params: { municipio_id: selectedMunicipality } });
+        setCps(Array.isArray(res.data) ? res.data : []);
+        setSelectedCp('');
+        setSelectedSettlement('');
+        setSettlementDetails(null);
+      } catch (err) {
+        console.error(err);
+        setCps([]);
+      }
+    };
+    fetchCps();
+  }, [selectedMunicipality]);
+
+  // Cargar Asentamientos al cambiar Municipio o CP
   useEffect(() => {
     if (!selectedMunicipality) {
       setSettlements([]);
@@ -277,7 +303,11 @@ function GeoCascade() {
     }
     const fetchSettlements = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/geo/asentamientos`, { params: { municipio_id: selectedMunicipality } });
+        const params = { municipio_id: selectedMunicipality };
+        if (selectedCp) {
+          params.cp_id = selectedCp;
+        }
+        const res = await axios.get(`${API_BASE}/geo/asentamientos`, { params });
         setSettlements(Array.isArray(res.data) ? res.data : []);
         setSelectedSettlement('');
         setSettlementDetails(null);
@@ -287,7 +317,7 @@ function GeoCascade() {
       }
     };
     fetchSettlements();
-  }, [selectedMunicipality]);
+  }, [selectedMunicipality, selectedCp]);
 
   // Cargar Localidades de INEGI al cambiar Municipio
   useEffect(() => {
@@ -371,6 +401,19 @@ function GeoCascade() {
             >
               <option value="">Selecciona Municipio...</option>
               {municipalities.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-1">Código Postal (CP)</label>
+            <select
+              value={selectedCp}
+              onChange={(e) => setSelectedCp(e.target.value)}
+              disabled={!selectedMunicipality}
+              className="civika-select w-full disabled:opacity-40"
+            >
+              <option value="">Selecciona CP...</option>
+              {cps.map(item => <option key={item.id} value={item.id}>{item.cp}</option>)}
             </select>
           </div>
 
@@ -794,109 +837,261 @@ function GeoFuzzySearch() {
 // Componente B.1: Jerarquía por Niveles SAT (Árbol Jerárquico)
 // -------------------------------------------------------------
 function FiscalHierarchy() {
-  const [nodes, setNodes] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [expandedNodes, setExpandedNodes] = useState({}); // code -> child array
+  const [tipo, setTipo] = useState(''); // 'productos' or 'servicios'
+  const [divisions, setDivisions] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [products, setProducts] = useState([]);
+  
+  const [selectedDivision, setSelectedDivision] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
+  
+  const [loadingDivs, setLoadingDivs] = useState(false);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
 
   // Cargar divisiones iniciales
   useEffect(() => {
     const fetchDivisions = async () => {
-      setLoading(true);
+      setLoadingDivs(true);
       try {
         const res = await axios.get(`${API_BASE}/fiscal/productos/hierarchy`);
-        setNodes(Array.isArray(res.data) ? res.data : []);
+        setDivisions(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
         console.error(err);
-        setNodes([]);
+        setDivisions([]);
       } finally {
-        setLoading(false);
+        setLoadingDivs(false);
       }
     };
     fetchDivisions();
   }, []);
 
-  const toggleNode = async (code) => {
-    // Si ya está expandido, lo colapsamos
-    if (expandedNodes[code]) {
-      const updated = { ...expandedNodes };
-      delete updated[code];
-      setExpandedNodes(updated);
+  // Cargar grupos cuando cambia la división
+  useEffect(() => {
+    if (!selectedDivision) {
+      setGroups([]);
       return;
     }
-
-    setLoading(true);
-    try {
-      const res = await axios.get(`${API_BASE}/fiscal/productos/hierarchy`, { params: { parent_code: code } });
-      if (Array.isArray(res.data)) {
-        setExpandedNodes(prev => ({ ...prev, [code]: res.data }));
+    const fetchGroups = async () => {
+      setLoadingGroups(true);
+      try {
+        const res = await axios.get(`${API_BASE}/fiscal/productos/hierarchy`, { params: { parent_code: selectedDivision } });
+        setGroups(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        console.error(err);
+        setGroups([]);
+      } finally {
+        setLoadingGroups(false);
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+    };
+    fetchGroups();
+  }, [selectedDivision]);
+
+  // Cargar clases cuando cambia el grupo
+  useEffect(() => {
+    if (!selectedGroup) {
+      setClasses([]);
+      return;
     }
-  };
+    const fetchClasses = async () => {
+      setLoadingClasses(true);
+      try {
+        const res = await axios.get(`${API_BASE}/fiscal/productos/hierarchy`, { params: { parent_code: selectedGroup } });
+        setClasses(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        console.error(err);
+        setClasses([]);
+      } finally {
+        setLoadingClasses(false);
+      }
+    };
+    fetchClasses();
+  }, [selectedGroup]);
 
-  const handleSelectProduct = (prod) => {
-    setSelectedProduct(prod);
-  };
+  // Cargar productos cuando cambia la clase
+  useEffect(() => {
+    if (!selectedClass) {
+      setProducts([]);
+      return;
+    }
+    const fetchProducts = async () => {
+      setLoadingProducts(true);
+      try {
+        const res = await axios.get(`${API_BASE}/fiscal/productos/hierarchy`, { params: { parent_code: selectedClass } });
+        setProducts(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        console.error(err);
+        setProducts([]);
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+    fetchProducts();
+  }, [selectedClass]);
 
-  // Renderizador recursivo para los nodos del árbol
-  const renderNode = (node, depth = 0) => {
-    const code = node.code;
-    const isExpanded = !!expandedNodes[code];
-    const isLeaf = code.length === 8 && !code.endsWith('00'); // Un producto real de 8 digitos
-
-    return (
-      <div key={code} className="space-y-1">
-        <div 
-          onClick={() => isLeaf ? handleSelectProduct(node) : toggleNode(code)}
-          className={`flex items-center gap-3 px-4 rounded-[8px] hover:bg-white/5 cursor-pointer text-sm transition-all group ${
-            selectedProduct?.code === code ? 'bg-[#1a3a5c]/30 border-l-2 border-blue-500 text-white' : 'text-slate-300'
-          }`}
-          style={{ height: '44px', paddingLeft: `${Math.max(16, depth * 24)}px` }}
-        >
-          {!isLeaf && (
-            <ChevronRight 
-              size={16} 
-              className={`text-slate-500 group-hover:text-white transition-transform ${isExpanded ? 'rotate-90 text-blue-400' : ''}`} 
-            />
-          )}
-          {isLeaf && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></div>}
-          <span className="font-mono font-bold text-slate-500 group-hover:text-blue-400 w-24 flex-shrink-0">{code}</span>
-          <span className="truncate font-medium">{node.description}</span>
-        </div>
-
-        {isExpanded && expandedNodes[code] && (
-          <div className="space-y-1">
-            {expandedNodes[code].map(child => renderNode(child, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const filteredDivisions = divisions.filter(d => {
+    if (!tipo) return true;
+    const prefix = parseInt(d.code.substring(0, 2), 10);
+    if (tipo === 'productos') {
+      return prefix >= 10 && prefix <= 60;
+    } else {
+      return prefix >= 70 && prefix <= 95;
+    }
+  });
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="civika-card p-10 space-y-8">
       <div>
         <h2 className="text-xl font-bold text-white mb-2 outfit flex items-center gap-2">
           <Layers className="text-blue-400" size={20} />
-          Navegador Jerárquico SAT
+          Navegador por Filtros SAT (PyS)
         </h2>
-        <p className="text-slate-400 text-sm">Explora las dependencias jerárquicas multinivel reguladas por el SAT mexicano (División ➜ Grupo ➜ Clase ➜ Producto).</p>
+        <p className="text-slate-400 text-sm">Explora las claves oficiales utilizando selectores en cascada integrales y dinámicos (Tipo ➜ División ➜ Grupo ➜ Clase).</p>
+      </div>
+
+      {/* Cascading Dropdowns */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6 bg-slate-900/40 border border-white/5 rounded-[14px]">
+        {/* Dropdown 1: Tipo */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-1">1. Tipo</label>
+          <select
+            value={tipo}
+            onChange={(e) => {
+              setTipo(e.target.value);
+              setSelectedDivision('');
+              setSelectedGroup('');
+              setSelectedClass('');
+              setSelectedProduct(null);
+              setGroups([]);
+              setClasses([]);
+              setProducts([]);
+            }}
+            className="civika-input w-full bg-slate-950 text-slate-300"
+          >
+            <option value="">Selecciona Tipo...</option>
+            <option value="productos">Productos</option>
+            <option value="servicios">Servicios</option>
+          </select>
+        </div>
+
+        {/* Dropdown 2: División */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-1">2. División</label>
+          <select
+            value={selectedDivision}
+            disabled={!tipo || loadingDivs}
+            onChange={(e) => {
+              setSelectedDivision(e.target.value);
+              setSelectedGroup('');
+              setSelectedClass('');
+              setSelectedProduct(null);
+              setClasses([]);
+              setProducts([]);
+            }}
+            className="civika-input w-full bg-slate-950 text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <option value="">
+              {loadingDivs ? "Cargando Divisiones..." : "Selecciona División..."}
+            </option>
+            {filteredDivisions.map(d => (
+              <option key={d.code} value={d.code}>
+                {d.code.substring(0, 2)} - {d.description}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Dropdown 3: Grupo */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-1">3. Grupo</label>
+          <select
+            value={selectedGroup}
+            disabled={!selectedDivision || loadingGroups}
+            onChange={(e) => {
+              setSelectedGroup(e.target.value);
+              setSelectedClass('');
+              setSelectedProduct(null);
+              setProducts([]);
+            }}
+            className="civika-input w-full bg-slate-950 text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <option value="">
+              {loadingGroups ? "Cargando Grupos..." : "Selecciona Grupo..."}
+            </option>
+            {groups.map(g => (
+              <option key={g.code} value={g.code}>
+                {g.code.substring(2, 4)} - {g.description}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Dropdown 4: Clase */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-1">4. Clase</label>
+          <select
+            value={selectedClass}
+            disabled={!selectedGroup || loadingClasses}
+            onChange={(e) => {
+              setSelectedClass(e.target.value);
+              setSelectedProduct(null);
+            }}
+            className="civika-input w-full bg-slate-950 text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <option value="">
+              {loadingClasses ? "Cargando Clases..." : "Selecciona Clase..."}
+            </option>
+            {classes.map(c => (
+              <option key={c.code} value={c.code}>
+                {c.code.substring(4, 6)} - {c.description}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-        {/* Hierarchical Tree Panel */}
+        {/* Products List Panel */}
         <div className="lg:col-span-3 border border-white/5 bg-slate-950/40 rounded-[14px] p-6 max-h-[500px] overflow-y-auto space-y-2">
           <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-3">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Catálogo Jerárquico</span>
-            {loading && <Loader2 className="animate-spin text-blue-400" size={16} />}
+            <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
+              {selectedClass ? "Productos / Servicios de la Clase" : "Selecciona los filtros superiores"}
+            </span>
+            {loadingProducts && <Loader2 className="animate-spin text-blue-400" size={16} />}
           </div>
           
           <div className="space-y-1">
-            {nodes.map(node => renderNode(node, 0))}
+            {selectedClass ? (
+              products.length > 0 ? (
+                products.map(prod => (
+                  <div 
+                    key={prod.code}
+                    onClick={() => setSelectedProduct(prod)}
+                    className={`flex items-center gap-3 px-4 rounded-[8px] hover:bg-white/5 cursor-pointer text-sm transition-all group ${
+                      selectedProduct?.code === prod.code ? 'bg-[#1a3a5c]/30 border-l-2 border-blue-500 text-white' : 'text-slate-300'
+                    }`}
+                    style={{ height: '44px' }}
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></div>
+                    <span className="font-mono font-bold text-slate-500 group-hover:text-blue-400 w-24 flex-shrink-0">{prod.code}</span>
+                    <span className="truncate font-medium">{prod.description}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-10 text-slate-500 text-sm">
+                  No se encontraron productos hoja en esta clase.
+                </div>
+              )
+            ) : (
+              <div className="text-center py-12 text-slate-500 text-sm flex flex-col items-center gap-2">
+                <Layers size={32} className="opacity-20 mb-1" />
+                <span>Completa la selección de los 4 filtros superiores para listar las claves finales.</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -934,7 +1129,7 @@ function FiscalHierarchy() {
             <div className="p-8 rounded-[14px] border border-dashed border-white/5 flex flex-col items-center justify-center text-center h-full min-h-[300px]">
               <Layers size={40} className="text-slate-600 mb-4 opacity-40" />
               <h4 className="text-white font-bold mb-2">Selecciona Clave Producto</h4>
-              <p className="text-slate-500 text-sm max-w-xs">Navega abriendo subniveles de división, grupo y clase hasta encontrar la clave final requerida.</p>
+              <p className="text-slate-500 text-sm max-w-xs">Navega a través de los dropdowns superiores y selecciona un producto de la lista para ver su detalle fiscal.</p>
             </div>
           )}
         </div>
@@ -1045,10 +1240,40 @@ function FiscalFuzzySearch() {
           </div>
 
           {selectedProduct && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-5 rounded-[10px] bg-emerald-500/5 border border-emerald-500/10 space-y-2">
-              <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">Producto Seleccionado</span>
-              <p className="text-white text-sm font-bold">{selectedProduct.description}</p>
-              <p className="text-xs text-slate-400 font-mono">Clave SAT: <span className="text-[#93c5fd] font-bold">{selectedProduct.code}</span></p>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 rounded-[14px] bg-[#1a3a5c]/10 border border-blue-500/20 space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest bg-blue-500/10 px-3 py-1 rounded-full">
+                  Ruta Jerárquica SAT (PyS)
+                </span>
+                <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded">
+                  {selectedProduct.code}
+                </span>
+              </div>
+              
+              <div className="space-y-3.5 text-[12px] border-l-2 border-blue-500/20 pl-4 ml-1.5 mt-2">
+                {selectedProduct.division_description && (
+                  <div>
+                    <span className="text-slate-500 font-bold block uppercase text-[9px] tracking-wider">División ({selectedProduct.division_code})</span>
+                    <span className="text-slate-300 font-semibold mt-0.5 block">{selectedProduct.division_description}</span>
+                  </div>
+                )}
+                {selectedProduct.grupo_description && (
+                  <div>
+                    <span className="text-slate-500 font-bold block uppercase text-[9px] tracking-wider">Grupo ({selectedProduct.grupo_code})</span>
+                    <span className="text-slate-300 font-semibold mt-0.5 block">{selectedProduct.grupo_description}</span>
+                  </div>
+                )}
+                {selectedProduct.clase_description && (
+                  <div>
+                    <span className="text-slate-500 font-bold block uppercase text-[9px] tracking-wider">Clase ({selectedProduct.clase_code})</span>
+                    <span className="text-slate-300 font-semibold mt-0.5 block">{selectedProduct.clase_description}</span>
+                  </div>
+                )}
+                <div className="pt-3.5 border-t border-white/5">
+                  <span className="text-[#93c5fd] font-extrabold block uppercase text-[9px] tracking-wider">Producto / Servicio Final</span>
+                  <span className="text-white font-black text-[15px] mt-1 block leading-tight">{selectedProduct.description}</span>
+                </div>
+              </div>
             </motion.div>
           )}
         </div>
@@ -1319,7 +1544,7 @@ function CalendarShowcase() {
     const fetchHolidays = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(`${API_BASE}/catalogos/calendario/festivos`, { params: { year } });
+        const res = await axios.get(`${API_BASE}/catalogs/calendario/festivos`, { params: { year } });
         setHolidaysList(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
         console.error(err);
@@ -1331,15 +1556,49 @@ function CalendarShowcase() {
     fetchHolidays();
   }, [year]);
 
+  const getBadge = (h) => {
+    const type = h.metadata?.type || 'official';
+    if (type === 'vacation') {
+      return (
+        <span className="text-[9px] font-black bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full uppercase tracking-widest">
+          VACACIONES
+        </span>
+      );
+    }
+    if (type === 'banking') {
+      return (
+        <span className="text-[9px] font-black bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full uppercase tracking-widest">
+          BANCARIO CNBV
+        </span>
+      );
+    }
+    return (
+      <span className="text-[9px] font-black bg-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full uppercase tracking-widest">
+        OFICIAL LFT
+      </span>
+    );
+  };
+
+  const getCardStyle = (h) => {
+    const type = h.metadata?.type || 'official';
+    if (type === 'vacation') {
+      return 'bg-[#10b981]/5 border-[#10b981]/20 hover:border-[#10b981]/40';
+    }
+    if (type === 'banking') {
+      return 'bg-[#f59e0b]/5 border-[#f59e0b]/20 hover:border-[#f59e0b]/40';
+    }
+    return 'bg-[#1a3a5c]/10 border-blue-500/20 hover:border-blue-500/40';
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="civika-card p-10 space-y-8">
       <div className="flex justify-between items-start">
         <div>
           <h2 className="text-xl font-bold text-white mb-2 outfit flex items-center gap-2">
             <Calendar className="text-blue-400" size={20} />
-            Calendario de Días Festivos Oficiales
+            Calendario de Días Festivos y Períodos Vacacionales
           </h2>
-          <p className="text-slate-400 text-sm">Días de descanso obligatorio y festivos oficiales en México regulados por la Ley Federal del Trabajo.</p>
+          <p className="text-slate-400 text-sm">Días de descanso obligatorio por la Ley Federal del Trabajo, días inhábiles de la CNBV y períodos vacacionales oficiales en México.</p>
         </div>
         
         <select 
@@ -1348,8 +1607,8 @@ function CalendarShowcase() {
           className="civika-select font-mono font-bold"
           style={{ width: '120px' }}
         >
-          <option value={2026}>2026</option>
           <option value={2025}>2025</option>
+          <option value={2026}>2026</option>
           <option value={2027}>2027</option>
         </select>
       </div>
@@ -1362,12 +1621,10 @@ function CalendarShowcase() {
       ) : holidaysList.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {holidaysList.map((h, idx) => (
-            <div key={idx} className="p-6 rounded-[14px] bg-[#1a3a5c]/10 border border-blue-500/20 hover:border-blue-500/40 transition-all duration-200 flex flex-col justify-between">
+            <div key={idx} className={`p-6 rounded-[14px] border transition-all duration-200 flex flex-col justify-between ${getCardStyle(h)}`}>
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <span className="text-[9px] font-black bg-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full uppercase tracking-widest">
-                    OFICIAL LFT
-                  </span>
+                  {getBadge(h)}
                   <span className="text-xs font-mono font-bold text-slate-500">
                     MX
                   </span>
@@ -1390,7 +1647,7 @@ function CalendarShowcase() {
         <div className="p-12 rounded-[14px] border border-dashed border-white/5 flex flex-col items-center justify-center text-center">
           <Calendar size={40} className="text-slate-600 mb-4 opacity-40" />
           <h4 className="text-white font-bold mb-2">Sin Festivos Registrados</h4>
-          <p className="text-slate-500 text-sm max-w-xs">No se encontraron días festivos oficiales para el año seleccionado.</p>
+          <p className="text-slate-500 text-sm max-w-xs">No se encontraron días festivos oficiales ni períodos vacacionales para el año seleccionado.</p>
         </div>
       )}
     </motion.div>

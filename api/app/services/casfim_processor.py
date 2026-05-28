@@ -126,45 +126,94 @@ class CasfimProcessor:
         
         for item in processed_data:
             logging.info(f"Extracting from {item['markdown_path']} (Sector: {item['sector_name']})")
-            with open(item['markdown_path'], 'r', encoding='utf-8') as f:
-                content = f.read()
             
-            # Pattern for 5-column table: | Clave | Razón Social | Nombre Corto | Estatus | ... |
-            # We use a more robust regex for markdown tables
-            rows = re.findall(r'\|\s*([0-9\-]+)\s*\|\s*([^\|]+)\s*\|\s*([^\|]*)\s*\|\s*([^\|]*)\s*\|', content)
+            # Normalize sector name to include the number, e.g., "01 - Autoridades y Organismos Reguladores"
+            sector_id_num = ""
+            m = re.search(r'Sector\s*(\d+)', item['sector_id'], re.IGNORECASE)
+            if m:
+                sector_id_num = m.group(1).zfill(2)
+            else:
+                m2 = re.search(r'sector\s*(\d+)', item['markdown_path'], re.IGNORECASE)
+                if m2:
+                    sector_id_num = m2.group(1).zfill(2)
             
-            if not rows:
-                # Fallback to simple list if table parsing fails
-                rows = re.findall(r'^\s*(\d{2,3}-\d{3})\s+([A-Z0-9\.\, ].+)$', content, re.MULTILINE)
-                # Reformat to match expected structure
-                rows = [(r[0], r[1], r[1][:20], "En Operación") for r in rows]
+            if sector_id_num:
+                # Capitalize first letter of each word in sector name for premium display
+                raw_name = item['sector_name'].strip()
+                words = raw_name.split()
+                if words:
+                    words = [w[0].upper() + w[1:] if len(w) > 0 else w for w in words]
+                    clean_name = " ".join(words)
+                else:
+                    clean_name = raw_name
+                sector_full_name = f"{sector_id_num} - {clean_name}"
+            else:
+                sector_full_name = item['sector_name'].upper()
 
-            for row in rows:
-                clave_raw, nombre, corto, estatus = [r.strip() for r in row]
+            with open(item['markdown_path'], 'r', encoding='utf-8') as f:
+                lines = f.readlines()
                 
+            last_inst = None
+            for line in lines:
+                line_str = line.strip()
+                if not line_str.startswith('|') or not line_str.endswith('|'):
+                    continue
+                # Split cells
+                cells = [c.strip() for c in line_str.split('|')[1:-1]]
+                if not cells:
+                    continue
+                
+                # Check if it is a separator line (e.g. |---|---|)
+                if all(re.match(r'^[\s\-:]*$', c) for c in cells):
+                    continue
+                
+                # Check if first cell is header (e.g. "Clave", "Sector")
+                if cells[0].lower() in ("clave", "sector"):
+                    continue
+                
+                clave_raw = cells[0]
                 # Normalize Clave (e.g., 40-012 -> 012)
                 clave = clave_raw.split('-')[-1] if '-' in clave_raw else clave_raw
-                if len(clave) != 3 or not clave.isdigit(): continue
                 
-                # Normalize Name (remove newlines and extra spaces)
-                nombre_clean = " ".join(nombre.split())
-                corto_clean = " ".join(corto.split()) if corto.strip() else nombre_clean[:20]
-                
-                # Map active status
-                active = "Operación" in estatus or "Autorizada" in estatus
-                
-                all_institutions.append({
-                    "clave": clave,
-                    "nombre": nombre_clean,
-                    "tipo": item['sector_name'].upper(),
-                    "corto": corto_clean,
-                    "active": active
-                })
+                if clave.isdigit() and len(clave) == 3:
+                    nombre = cells[1] if len(cells) > 1 else ""
+                    corto = cells[2] if len(cells) > 2 else ""
+                    estatus = cells[3] if len(cells) > 3 else ""
+                    
+                    # Normalize name and short name
+                    nombre_clean = " ".join(nombre.split())
+                    corto_clean = " ".join(corto.split()) if corto.strip() else nombre_clean[:20]
+                    
+                    # Default active to True if no status column, else check status
+                    active = True
+                    if estatus:
+                        active = "Operación" in estatus or "Autorizada" in estatus
+                        
+                    last_inst = {
+                        "clave": clave,
+                        "nombre": nombre_clean,
+                        "tipo": sector_full_name,
+                        "corto": corto_clean,
+                        "active": active
+                    }
+                    all_institutions.append(last_inst)
+                elif last_inst and not clave_raw:
+                    # Handle split rows (append wrap-around text from Docling)
+                    if len(cells) > 1 and cells[1]:
+                        last_inst["nombre"] = " ".join((last_inst["nombre"] + " " + cells[1]).split())
+                    if len(cells) > 2 and cells[2]:
+                        # If current short name is just a placeholder, replace it. Otherwise append.
+                        val = cells[2].strip()
+                        if val:
+                            if last_inst["corto"] == last_inst["nombre"][:20] or not last_inst["corto"]:
+                                last_inst["corto"] = val
+                            else:
+                                last_inst["corto"] = " ".join((last_inst["corto"] + " " + val).split())
         
         df = pd.DataFrame(all_institutions)
         if not df.empty:
             # Sort by active first so duplicates keep the active one if any
-            df = df.sort_values('active', ascending=False).drop_duplicates(subset=['clave'], keep='first')
+            df = df.sort_values('active', ascending=False).drop_duplicates(subset=['clave', 'tipo'], keep='first')
         return df
 
     def load_to_db(self, df):
@@ -185,9 +234,9 @@ class CasfimProcessor:
         
         # 3. Sync Institutions
         df['tipo_entidad_id'] = df['tipo'].map(type_map)
-        df_final = df.drop(columns=['tipo']).drop_duplicates(subset=['clave'])
+        df_final = df.drop(columns=['tipo']).drop_duplicates(subset=['clave', 'tipo_entidad_id'])
         
-        manager_inst = SCD2Manager(target_table="instituciones_bancarias", natural_key="clave", schema="financial")
+        manager_inst = SCD2Manager(target_table="instituciones_bancarias", natural_key=["clave", "tipo_entidad_id"], schema="financial")
         return manager_inst.upsert(df_final)
 
 if __name__ == "__main__":

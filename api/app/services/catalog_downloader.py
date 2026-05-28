@@ -3,11 +3,16 @@ import pandas as pd
 import os
 import requests
 from bs4 import BeautifulSoup
-from datetime import date
+from datetime import date, datetime, timedelta
 import logging
 from sqlalchemy import text
 from app.services.scd2_manager import SCD2Manager
 from app.core.celery_app import celery_app
+import zipfile
+import io
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class CatalogDownloader:
     @staticmethod
@@ -82,26 +87,82 @@ class CatalogDownloader:
             df_prod = pd.DataFrame([
                 # Divisiones (Nivel 1: XX000000)
                 {"code": "01000000", "description": "Difusión de material en vivo y en directo y animales y plantas vivos"},
-                {"code": "84000000", "description": "Servicios profesionales, científicos y técnicos"},
                 {"code": "43000000", "description": "Tecnología de la información, telecomunicaciones y entretenimiento"},
                 {"code": "81000000", "description": "Servicios informáticos, consultoría y soporte de TI"},
+                {"code": "84000000", "description": "Servicios profesionales, científicos y técnicos"},
+                {"code": "80000000", "description": "Servicios de consultoría de gestión y servicios empresariales"},
+                {"code": "86000000", "description": "Servicios de educación y capacitación"},
                 
                 # Grupos (Nivel 2: XXXX0000)
                 {"code": "01010000", "description": "Animales vivos"},
-                {"code": "84110000", "description": "Servicios de contabilidad, auditoría y teneduría de libros"},
                 {"code": "43230000", "description": "Software"},
+                {"code": "43220000", "description": "Equipos y servicios de red y telecomunicaciones"},
                 {"code": "81110000", "description": "Servicios informáticos y de soporte de TI"},
+                {"code": "84110000", "description": "Servicios de contabilidad, auditoría y teneduría de libros"},
+                {"code": "84130000", "description": "Servicios de marketing, publicidad y relaciones públicas"},
+                {"code": "80100000", "description": "Servicios de consultoría de gestión empresarial"},
+                {"code": "86100000", "description": "Servicios de educación y escuelas"},
                 
                 # Clases (Nivel 3: XXXXXX00)
                 {"code": "01010100", "description": "Perros de compañía vivos y gatos vivos"},
-                {"code": "84111500", "description": "Servicios de contabilidad y auditoría general"},
                 {"code": "43231500", "description": "Software de gestión empresarial"},
+                {"code": "43231600", "description": "Software de sistema operativo y utilidades"},
+                {"code": "43232100", "description": "Software de desarrollo de aplicaciones"},
+                {"code": "43232600", "description": "Software de diseño y multimedia"},
+                {"code": "43221700", "description": "Equipos de red fija y conmutación"},
+                {"code": "43222500", "description": "Servicios de telecomunicaciones"},
                 {"code": "81111500", "description": "Sistemas y soporte de redes de computadoras"},
+                {"code": "81111800", "description": "Servicios de computación en la nube"},
+                {"code": "81112000", "description": "Servicios de desarrollo de software y sistemas"},
+                {"code": "84111500", "description": "Servicios de contabilidad y auditoría general"},
+                {"code": "84131500", "description": "Servicios de publicidad y campañas integrales"},
+                {"code": "80101500", "description": "Servicios de consultoría y asesoría empresarial"},
+                {"code": "86101700", "description": "Servicios educativos de nivel superior"},
                 
                 # Productos (Nivel 4: XXXXXXXX)
                 {"code": "01010101", "description": "Perros de compañía vivos"},
-                {"code": "84111506", "description": "Servicios de facturación"},
-                {"code": "81111504", "description": "Mantenimiento y soporte de software"}
+                {"code": "01010102", "description": "Gatos vivos"},
+                {"code": "43231501", "description": "Software de gestión de relaciones con clientes CRM"},
+                {"code": "43231502", "description": "Software de planificación de recursos empresariales ERP"},
+                {"code": "43231503", "description": "Software de inteligencia empresarial y análisis"},
+                {"code": "43231504", "description": "Software de gestión de cadena de suministro SCM"},
+                {"code": "43231505", "description": "Software de gestión de recursos humanos HRMS"},
+                {"code": "43231506", "description": "Software de facturación y contabilidad"},
+                {"code": "43231507", "description": "Software de gestión de proyectos y colaboración"},
+                {"code": "43231601", "description": "Sistemas operativos de servidor"},
+                {"code": "43231602", "description": "Software de base de datos"},
+                {"code": "43231603", "description": "Software de seguridad y antivirus"},
+                {"code": "43231604", "description": "Software de virtualización"},
+                {"code": "43232101", "description": "Entornos de desarrollo integrados IDE"},
+                {"code": "43232102", "description": "Compiladores y depuradores"},
+                {"code": "43232601", "description": "Software de diseño asistido por computadora CAD"},
+                {"code": "43232602", "description": "Software de edición gráfica y modelado 3D"},
+                {"code": "43221701", "description": "Ruteadores y switches de comunicación"},
+                {"code": "43221702", "description": "Servidores de acceso de red y cortafuegos de hardware"},
+                {"code": "43222501", "description": "Servicio de internet de banda ancha de fibra óptica"},
+                {"code": "43222502", "description": "Servicios de telefonía IP VOIP empresarial"},
+                {"code": "81111501", "description": "Servicios de administración y monitoreo de red remota"},
+                {"code": "81111502", "description": "Instalación de hardware y cableado estructurado certificado"},
+                {"code": "81111503", "description": "Servicios de auditoría de seguridad informática y cortafuegos de red"},
+                {"code": "81111504", "description": "Mantenimiento y soporte de software de infraestructura de red"},
+                {"code": "81111801", "description": "Servicios de hosting y alojamiento web dedicado de alta velocidad"},
+                {"code": "81111802", "description": "Almacenamiento y respaldo en la nube automatizado (SaaS)"},
+                {"code": "81111803", "description": "Servicios de infraestructura como servicio (IaaS) elástica"},
+                {"code": "81112001", "description": "Desarrollo a la medida de páginas web y aplicaciones móviles nativas"},
+                {"code": "81112002", "description": "Diseño, optimización y arquitectura de bases de datos relacionales"},
+                {"code": "81112003", "description": "Servicios de integración avanzada de sistemas de TI empresariales"},
+                {"code": "84111501", "description": "Servicios integrales de teneduría de libros y registros de contabilidad"},
+                {"code": "84111502", "description": "Servicios de preparación, cálculo y declaración de impuestos anuales"},
+                {"code": "84111503", "description": "Servicios de auditoría fiscal externa e interna"},
+                {"code": "84111506", "description": "Servicios de facturación electrónica y emisión de CFDI autorizados"},
+                {"code": "84131501", "description": "Diseño conceptual de campañas publicitarias digitales e impresas"},
+                {"code": "84131502", "description": "Gestión estratégica de redes sociales y marketing digital (SEO/SEM)"},
+                {"code": "84131503", "description": "Servicios de colocación y compra de espacios publicitarios en medios"},
+                {"code": "80101501", "description": "Servicios de consultoría en desarrollo organizacional y cultura corporativa"},
+                {"code": "80101502", "description": "Servicios de planificación y consultoría estratégica empresarial"},
+                {"code": "80101503", "description": "Servicios de consultoría en gestión de riesgos corporativos"},
+                {"code": "86101701", "description": "Servicios educativos universitarios presenciales licenciaturas e ingenierías"},
+                {"code": "86101702", "description": "Servicios de capacitación profesional continua y certificaciones en línea"}
             ])
             SCD2Manager(target_table="cat_prod_serv", natural_key="code", schema="fiscal").upsert(df_prod)
             
@@ -125,6 +186,39 @@ class CatalogDownloader:
                 {"code": "CP01", "description": "Pagos"}
             ])
             SCD2Manager(target_table="cat_uso_cfdi", natural_key="code", schema="fiscal").upsert(df_uso)
+            
+            # 10. Bancos del SAT (c_Banco)
+            df_bancos = pd.DataFrame([
+                {"code": "002", "nombre_corto": "BANAMEX", "razon_social": "Banco Nacional de México, S.A.", "rfc": "BNM840515VB1"},
+                {"code": "012", "nombre_corto": "BBVA", "razon_social": "BBVA México, S.A.", "rfc": "BBA830831LJ8"},
+                {"code": "014", "nombre_corto": "SANTANDER", "razon_social": "Banco Santander México, S.A.", "rfc": "BSM970519DU8"},
+                {"code": "021", "nombre_corto": "HSBC", "razon_social": "HSBC México, S.A.", "rfc": "HME9501258M1"},
+                {"code": "030", "nombre_corto": "BAJIO", "razon_social": "Banco del Bajío, S.A.", "rfc": "BBA940707IE1"},
+                {"code": "036", "nombre_corto": "INBURSA", "razon_social": "Banco Inbursa, S.A.", "rfc": "BIN9310115V9"},
+                {"code": "044", "nombre_corto": "SCOTIABANK", "razon_social": "Scotiabank Inverlat, S.A.", "rfc": "SIN9412025I4"},
+                {"code": "072", "nombre_corto": "BANORTE", "razon_social": "Banco Mercantil del Norte, S.A.", "rfc": "BMN930209927"},
+                {"code": "112", "nombre_corto": "BANCO AZTECA", "razon_social": "Banco Azteca, S.A.", "rfc": "BAZ0206187T0"},
+                {"code": "127", "nombre_corto": "COMPARTAMOS", "razon_social": "Banco Compartamos, S.A.", "rfc": "BCO0208269S8"},
+                {"code": "137", "nombre_corto": "BANREGIO", "razon_social": "Banco Regional, S.A.", "rfc": "BRE9402283R7"},
+                {"code": "901", "nombre_corto": "CLN", "razon_social": "Clabe Interbancaria Extranjera", "rfc": "XXX000000XXX"}
+            ])
+            SCD2Manager(target_table="cat_bancos", natural_key="code", schema="fiscal").upsert(df_bancos)
+
+            # 11. Países del SAT (c_Pais)
+            df_paises = pd.DataFrame([
+                {"code": "MEX", "description": "México", "agrupacion": "América del Norte"},
+                {"code": "USA", "description": "Estados Unidos de América", "agrupacion": "América del Norte"},
+                {"code": "CAN", "description": "Canadá", "agrupacion": "América del Norte"},
+                {"code": "DEU", "description": "Alemania", "agrupacion": "Europa"},
+                {"code": "ESP", "description": "España", "agrupacion": "Europa"},
+                {"code": "FRA", "description": "Francia", "agrupacion": "Europa"},
+                {"code": "GBR", "description": "Reino Unido", "agrupacion": "Europa"},
+                {"code": "CHN", "description": "China", "agrupacion": "Asia"},
+                {"code": "JPN", "description": "Japón", "agrupacion": "Asia"},
+                {"code": "BRA", "description": "Brasil", "agrupacion": "América del Sur"},
+                {"code": "ARG", "description": "Argentina", "agrupacion": "América del Sur"}
+            ])
+            SCD2Manager(target_table="cat_paises", natural_key="code", schema="fiscal").upsert(df_paises)
             
             return {"status": "sat_catalogs_synced"}
         except Exception as e:
@@ -182,8 +276,7 @@ class CatalogDownloader:
             df_bancos = pd.DataFrame(bancos_data)
             df_bancos['tipo_entidad_id'] = df_bancos['tipo'].map(type_map)
             df_bancos = df_bancos.drop(columns=['tipo'])
-            
-            manager_inst = SCD2Manager(target_table="instituciones_bancarias", natural_key="clave", schema="financial")
+            manager_inst = SCD2Manager(target_table="instituciones_bancarias", natural_key=["clave", "tipo_entidad_id"], schema="financial")
             manager_inst.upsert(df_bancos)
             
             # Map Successors (Bital 086 y Atlántico 016 absorvidos por HSBC 021)
@@ -233,9 +326,74 @@ class CatalogDownloader:
         manager_zones.upsert(df_zones)
 
     @staticmethod
+    def download_sepomex_latest():
+        """Download latest SEPOMEX ZIP from Correos de México and extract the text file"""
+        url = 'https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx'
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        logging.info("Downloading latest SEPOMEX ZIP from official site...")
+        try:
+            session = requests.Session()
+            # 1. GET request to obtain current ASP.NET ViewState parameters
+            r_get = session.get(url, headers=headers, verify=False, timeout=30)
+            soup = BeautifulSoup(r_get.text, 'html.parser')
+            
+            vs = soup.find('input', id='__VIEWSTATE').get('value')
+            vsg = soup.find('input', id='__VIEWSTATEGENERATOR').get('value')
+            ev = soup.find('input', id='__EVENTVALIDATION').get('value')
+            
+            # 2. Build form payload
+            payload = {
+                '__EVENTTARGET': '',
+                '__EVENTARGUMENT': '',
+                '__LASTFOCUS': '',
+                '__VIEWSTATE': vs,
+                '__VIEWSTATEGENERATOR': vsg,
+                '__EVENTVALIDATION': ev,
+                'cboEdo': '00',          # Todos (All states)
+                'rblTipo': 'txt',        # TXT format
+                'btnDescarga.x': '15',   # ASP.NET image coordinates
+                'btnDescarga.y': '15'
+            }
+            
+            # 3. POST request to submit form and download the ZIP file content
+            r_post = session.post(url, data=payload, headers=headers, verify=False, timeout=60)
+            if r_post.status_code == 200 and "CPdescargatxt" in r_post.headers.get('Content-Disposition', ''):
+                zip_file = zipfile.ZipFile(io.BytesIO(r_post.content))
+                
+                # Locate the .txt file inside the ZIP archive
+                txt_filename = None
+                for name in zip_file.namelist():
+                    if name.endswith('.txt'):
+                        txt_filename = name
+                        break
+                
+                if txt_filename:
+                    target_dir = "/app/sepomex"
+                    os.makedirs(target_dir, exist_ok=True)
+                    target_file = os.path.join(target_dir, "CPdescarga.txt")
+                    
+                    with open(target_file, "wb") as f_out:
+                        f_out.write(zip_file.read(txt_filename))
+                        
+                    logging.info(f"Successfully downloaded and extracted {txt_filename} to {target_file}")
+                    return True
+                else:
+                    logging.error("No .txt file found inside SEPOMEX ZIP archive.")
+            else:
+                logging.error(f"Failed to retrieve SEPOMEX ZIP. Server responded with status code: {r_post.status_code}")
+        except Exception as e:
+            logging.error(f"Error downloading latest SEPOMEX ZIP: {e}")
+        return False
+
+    @staticmethod
     def sync_sepomex_local():
         """Process local SEPOMEX files with strictly normalized hierarchy"""
         CatalogDownloader.sync_countries()
+        
+        # Proactivamente descargar la versión más reciente de SEPOMEX
+        CatalogDownloader.download_sepomex_latest()
         
         sepomex_path = "/app/sepomex/CPdescarga.txt"
         if not os.path.exists(sepomex_path):
@@ -244,7 +402,14 @@ class CatalogDownloader:
                 return {"error": "SEPOMEX source file not found"}
             
         logging.info(f"Processing SEPOMEX file: {sepomex_path}")
-        df = pd.read_csv(sepomex_path, sep="|", encoding="latin-1")
+        # Auto-detect if line 1 is a copyright notice (Correos de México now includes it)
+        # If the first line does NOT contain 'd_codigo', skip it (it's the legal notice)
+        with open(sepomex_path, 'r', encoding='latin-1') as _f:
+            _first_line = _f.readline()
+        _skiprows = 1 if 'd_codigo' not in _first_line else 0
+        if _skiprows:
+            logging.info("Detected copyright notice on line 1 - skipping it.")
+        df = pd.read_csv(sepomex_path, sep="|", encoding="latin-1", skiprows=_skiprows, low_memory=False)
         
         df_clean = df.rename(columns={
             "d_codigo": "cp",
@@ -336,31 +501,144 @@ class CatalogDownloader:
             
         mx_holidays = holidays.MX(years=year)
         
+        # self-contained Easter calculation (Meeus/Jones/Butcher)
+        a = year % 19
+        b = year // 100
+        c = year % 100
+        d = b // 4
+        e = b % 4
+        f = (b + 8) // 25
+        g = (b - f + 1) // 3
+        h = (19 * a + b - d - g + 15) % 30
+        i = c // 4
+        k = c % 4
+        l = (32 + 2 * e + 2 * i - h - k) % 7
+        m = (a + 11 * h + 22 * l) // 451
+        month = (h + l - 7 * m + 114) // 31
+        day = ((h + l - 7 * m + 114) % 31) + 1
+        easter_sunday = date(year, month, day)
+        
+        jueves_santo = easter_sunday - timedelta(days=3)
+        viernes_santo = easter_sunday - timedelta(days=2)
+        
         translation_map = {
-            "New Year's Day": "Año Nuevo",
-            "Constitution Day": "Día de la Constitución",
-            "Benito Juárez's Birthday": "Natalicio de Benito Juárez",
-            "Maundy Thursday": "Jueves Santo",
-            "Good Friday": "Viernes Santo",
-            "Labor Day": "Día del Trabajo",
-            "Independence Day": "Día de la Independencia",
-            "Revolution Day": "Día de la Revolución",
-            "Change of Federal Government": "Transmisión del Poder Ejecutivo Federal",
-            "Christmas Day": "Navidad",
-            "Day of the Dead": "Día de Muertos",
-            "Our Lady of Guadalupe": "Día de la Virgen de Guadalupe"
+            "new year's day": "Año Nuevo",
+            "constitution day": "Día de la Constitución",
+            "benito juárez's birthday": "Natalicio de Benito Juárez",
+            "labor day": "Día del Trabajo",
+            "independence day": "Día de la Independencia",
+            "revolution day": "Día de la Revolución",
+            "change of federal government": "Transmisión del Poder Ejecutivo Federal",
+            "christmas day": "Navidad",
+            "maundy thursday": "Jueves Santo",
+            "good friday": "Viernes Santo",
+            "day of the dead": "Día de Muertos",
+            "our lady of guadalupe": "Día de la Virgen de Guadalupe"
         }
         
+        registered_dates = set()
         data = []
+        
         for dt, name in mx_holidays.items():
-            translated_name = translation_map.get(name, name)
-            data.append({
-                "date": dt.isoformat(),
-                "name": translated_name,
-                "country_code": "MX"
-            })
+            clean_name = name.lower().strip()
+            translated_name = translation_map.get(clean_name, name)
             
+            data.append({
+                "date": dt,
+                "name": translated_name,
+                "country_code": "MX",
+                "metadata": {
+                    "type": "official",
+                    "origin": "holidays_package",
+                    "is_lft_mandatory": True
+                }
+            })
+            registered_dates.add(dt)
+            
+        # Add Jueves Santo and Viernes Santo explicitly if they aren't registered
+        for holiday_date, name in [(jueves_santo, "Jueves Santo"), (viernes_santo, "Viernes Santo")]:
+            if holiday_date not in registered_dates:
+                data.append({
+                    "date": holiday_date,
+                    "name": name,
+                    "country_code": "MX",
+                    "metadata": {
+                        "type": "banking",
+                        "origin": "cnbv_custom",
+                        "is_lft_mandatory": False
+                    }
+                })
+                registered_dates.add(holiday_date)
+                
+        # Add Día de Muertos (Nov 2) and Virgen de Guadalupe (Dec 12) explicitly as banking holidays
+        for m_day, m_month, name in [(2, 11, "Día de Muertos"), (12, 12, "Día de la Virgen de Guadalupe")]:
+            holiday_date = date(year, m_month, m_day)
+            if holiday_date not in registered_dates:
+                data.append({
+                    "date": holiday_date,
+                    "name": name,
+                    "country_code": "MX",
+                    "metadata": {
+                        "type": "banking",
+                        "origin": "cnbv_custom",
+                        "is_lft_mandatory": False
+                    }
+                })
+                registered_dates.add(holiday_date)
+
+        # Inject official vacation periods
+        # Semana Santa Vacation: Monday of Holy Week to Sunday of Easter Week (14 days)
+        ss_start = jueves_santo - timedelta(days=3)
+        for i in range(14):
+            vac_date = ss_start + timedelta(days=i)
+            if vac_date not in registered_dates:
+                data.append({
+                    "date": vac_date,
+                    "name": "Período Vacacional - Semana Santa",
+                    "country_code": "MX",
+                    "metadata": {
+                        "type": "vacation",
+                        "origin": "sep_schedule",
+                        "is_lft_mandatory": False
+                    }
+                })
+                
+        # Summer Vacations (July 15 to Aug 15)
+        summer_start = date(year, 7, 15)
+        for i in range(32):
+            vac_date = summer_start + timedelta(days=i)
+            if vac_date not in registered_dates:
+                data.append({
+                    "date": vac_date,
+                    "name": "Período Vacacional - Verano",
+                    "country_code": "MX",
+                    "metadata": {
+                        "type": "vacation",
+                        "origin": "sep_schedule",
+                        "is_lft_mandatory": False
+                    }
+                })
+                
+        # Winter Vacations (Dec 18 to Jan 8 next year)
+        winter_start = date(year, 12, 18)
+        for i in range(22):
+            vac_date = winter_start + timedelta(days=i)
+            if vac_date not in registered_dates:
+                data.append({
+                    "date": vac_date,
+                    "name": "Período Vacacional - Fin de Año",
+                    "country_code": "MX",
+                    "metadata": {
+                        "type": "vacation",
+                        "origin": "sep_schedule",
+                        "is_lft_mandatory": False
+                    }
+                })
+        
         df = pd.DataFrame(data)
+        import json
+        df['metadata'] = df['metadata'].apply(lambda x: json.dumps(x))
         df['date'] = pd.to_datetime(df['date']).dt.date
+        
         manager = SCD2Manager(target_table="holidays", natural_key="date", schema="calendars")
         return manager.upsert(df)

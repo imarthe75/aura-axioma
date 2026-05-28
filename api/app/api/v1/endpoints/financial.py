@@ -18,7 +18,7 @@ async def get_instituciones(
     Soporta filtros combinados por sector, búsquedas por nombre, y alternancia entre 
     histórico completo o solo entidades activas. Retorna información de fusión y sucesores.
     """
-    manager = SCD2Manager(target_table="instituciones_bancarias", natural_key="clave", schema="financial")
+    manager = SCD2Manager(target_table="instituciones_bancarias", natural_key=["clave", "tipo_entidad_id"], schema="financial")
     
     query = """
         SELECT 

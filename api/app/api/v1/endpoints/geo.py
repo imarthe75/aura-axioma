@@ -39,9 +39,29 @@ async def obtener_municipios(
     res = manager.search(search_term=q, limit=100, **filters)
     return sorted(res, key=lambda x: x.get("name", ""))
 
+@router.get("/codigos-postales", tags=["Geografía"])
+async def obtener_codigos_postales(
+    municipio_id: str = Query(..., description="UUID del municipio"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Obtener códigos postales únicos asociados a un municipio"""
+    manager = SCD2Manager(target_table="codigos_postales", natural_key="cp", schema="geo")
+    query = text("""
+        SELECT DISTINCT cp.id, cp.cp
+        FROM geo.asentamientos a
+        JOIN geo.codigos_postales cp ON a.cp_id = cp.id
+        WHERE a.municipality_id = CAST(:municipio_id AS uuid)
+          AND a.scd_is_current = TRUE
+        ORDER BY cp.cp
+    """)
+    with manager.engine.connect() as conn:
+        result = conn.execute(query, {"municipio_id": municipio_id})
+        return [dict(row._asdict()) for row in result]
+
 @router.get("/asentamientos", tags=["Geografía"])
 async def obtener_asentamientos(
     municipio_id: Optional[str] = Query(None, description="Filtrar por UUID del municipio"),
+    cp_id: Optional[str] = Query(None, description="Filtrar por UUID del Código Postal"),
     q: Optional[str] = Query(None, description="Término para búsqueda predictiva Fuzzy (trigram)"),
     current_user: dict = Depends(get_current_user)
 ):
@@ -76,11 +96,6 @@ async def obtener_asentamientos(
             return [dict(row._asdict()) for row in result]
             
     # De lo contrario, filtrado normal por municipio (cascada)
-    filters = {}
-    if municipio_id:
-        filters["municipality_id"] = municipio_id
-        
-    # Obtener colonias uniendo tipos de asentamiento y zonas
     query = text("""
         SELECT 
             a.id,
@@ -94,11 +109,12 @@ async def obtener_asentamientos(
         JOIN geo.codigos_postales cp ON a.cp_id = cp.id
         WHERE a.scd_is_current = TRUE
           AND (CAST(:municipio_id AS uuid) IS NULL OR a.municipality_id = CAST(:municipio_id AS uuid))
+          AND (CAST(:cp_id AS uuid) IS NULL OR a.cp_id = CAST(:cp_id AS uuid))
         ORDER BY a.name
         LIMIT 100
     """)
     with manager.engine.connect() as conn:
-        result = conn.execute(query, {"municipio_id": municipio_id})
+        result = conn.execute(query, {"municipio_id": municipio_id, "cp_id": cp_id})
         return [dict(row._asdict()) for row in result]
 
 @router.get("/codigo-postal/{cp}", tags=["Geografía"])

@@ -44,9 +44,3 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-
-@app.post("/sync/initial", tags=["Admin"])
-async def trigger_initial_sync(current_user: dict = Depends(get_current_user)):
-    """Trigger the initial sync of all catalogs (Holidays, SEPOMEX, SAT, CASFIM)"""
-    CatalogDownloader.sync_all_catalogs.delay()
-    return {"status": "initial_sync_triggered"}

@@ -72,6 +72,8 @@ class SCD2Manager:
             for c in cols:
                 if c.endswith('_id'):
                     source_cols_list.append(f'NULLIF(src."{c}", \'\')::uuid')
+                elif c == 'metadata':
+                    source_cols_list.append(f'NULLIF(src."{c}", \'\')::jsonb')
                 else:
                     source_cols_list.append(f'src."{c}"')
             source_cols = ", ".join(source_cols_list)

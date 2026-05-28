@@ -11,17 +11,29 @@ async def search_productos(
     q: Optional[str] = Query(None, description="Buscar por descripción o código (Fuzzy Search GIN)"),
     current_user: dict = Depends(get_current_user)
 ):
-    """Buscar productos y servicios del SAT con soporte de búsqueda predictiva ultrarrápida"""
+    """Buscar productos y servicios del SAT con soporte de búsqueda predictiva y jerarquía completa (PyS)"""
     manager = SCD2Manager(target_table="cat_prod_serv", natural_key="code", schema="fiscal")
     
     if q and len(q) >= 2:
-        # Usar índice trigram GIN para resolver búsquedas en menos de 50ms
         query = text("""
-            SELECT id, code, description, active
-            FROM fiscal.cat_prod_serv
-            WHERE (description ILIKE :q OR code ILIKE :q)
-              AND scd_is_current = TRUE
-            ORDER BY code
+            SELECT 
+                p.id, 
+                p.code, 
+                p.description, 
+                p.active,
+                d.code as division_code,
+                d.description as division_description,
+                g.code as grupo_code,
+                g.description as grupo_description,
+                c.code as clase_code,
+                c.description as clase_description
+            FROM fiscal.cat_prod_serv p
+            LEFT JOIN fiscal.cat_prod_serv d ON d.code = SUBSTRING(p.code, 1, 2) || '000000' AND d.scd_is_current = TRUE
+            LEFT JOIN fiscal.cat_prod_serv g ON g.code = SUBSTRING(p.code, 1, 4) || '0000' AND g.scd_is_current = TRUE
+            LEFT JOIN fiscal.cat_prod_serv c ON c.code = SUBSTRING(p.code, 1, 6) || '00' AND c.scd_is_current = TRUE
+            WHERE (p.description ILIKE :q OR p.code ILIKE :q)
+              AND p.scd_is_current = TRUE
+            ORDER BY p.code
             LIMIT 100
         """)
         with manager.engine.connect() as conn:
@@ -150,4 +162,16 @@ async def get_exportacion(current_user: dict = Depends(get_current_user)):
 async def get_objeto_impuesto(current_user: dict = Depends(get_current_user)):
     """Listar tipos de objeto de impuesto"""
     manager = SCD2Manager(target_table="cat_objeto_imp", natural_key="code", schema="fiscal")
+    return manager.search(limit=100)
+
+@router.get("/bancos", tags=["Fiscal"])
+async def get_bancos(current_user: dict = Depends(get_current_user)):
+    """Listar bancos oficiales del SAT (c_Banco)"""
+    manager = SCD2Manager(target_table="cat_bancos", natural_key="code", schema="fiscal")
+    return manager.search(limit=100)
+
+@router.get("/paises", tags=["Fiscal"])
+async def get_paises(current_user: dict = Depends(get_current_user)):
+    """Listar países oficiales del SAT (c_Pais)"""
+    manager = SCD2Manager(target_table="cat_paises", natural_key="code", schema="fiscal")
     return manager.search(limit=100)
