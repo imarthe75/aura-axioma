@@ -33,7 +33,6 @@ async def obtener_georeferencia(lat: float, lon: float, radio_km: float = 1.0, c
     """
     manager = SCD2Manager(target_table="localidades", natural_key="clave_localidad", schema="inegi")
     
-    # Simple Euclidean distance for small areas (approximation)
     query = text("""
         SELECT 
             l.*,
@@ -43,7 +42,7 @@ async def obtener_georeferencia(lat: float, lon: float, radio_km: float = 1.0, c
         JOIN geo.municipios m ON l.municipality_id = m.id
         JOIN geo.estados e ON m.state_id = e.id
         WHERE l.scd_is_current = TRUE
-        ORDER BY (ST_Point(l.longitud, l.latitud) <-> ST_Point(:lon, :lat))
+        ORDER BY ((l.longitud - :lon) * (l.longitud - :lon) + (l.latitud - :lat) * (l.latitud - :lat)) ASC
         LIMIT 5
     """)
     

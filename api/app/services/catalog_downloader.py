@@ -291,6 +291,96 @@ class CatalogDownloader:
     @staticmethod
     def sync_countries():
         """Sync global countries (ISO 3166)"""
+        import json
+        json_path = "/app/scratch/countries_clean.json"
+        if not os.path.exists(json_path):
+            json_path = "/home/ia/ecosistema-casmarts/aura-axioma/api/scratch/countries_clean.json"
+
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                special_es = {
+                    "MEX": "Mexicana", "USA": "Estadounidense", "CAN": "Canadiense", "ESP": "Española",
+                    "FRA": "Francesa", "GBR": "Británica", "DEU": "Alemana", "ITA": "Italiana",
+                    "JPN": "Japonesa", "CHN": "China", "BRA": "Brasileña", "ARG": "Argentina",
+                    "COL": "Colombiana", "CHL": "Chilena", "PER": "Peruana", "VEN": "Venezolana", "CUB": "Cubana"
+                }
+
+                parsed = []
+                for c in data:
+                    cca3 = c.get("cca3")
+                    if not cca3:
+                        continue
+
+                    name_es = c.get("translations", {}).get("spa", {}).get("common", c.get("name", {}).get("common", ""))
+                    name_en = c.get("name", {}).get("common", "")
+                    name_fr = c.get("translations", {}).get("fra", {}).get("common", "")
+
+                    native_names = c.get("name", {}).get("native", {})
+                    name_native = name_es
+                    if native_names:
+                        first_lang = list(native_names.keys())[0]
+                        name_native = native_names[first_lang].get("common", name_es)
+
+                    idd = c.get("idd", {})
+                    root = idd.get("root", "")
+                    suffixes = idd.get("suffixes", [])
+                    phone_code = ""
+                    if root:
+                        if len(suffixes) == 1:
+                            phone_code = root + suffixes[0]
+                        elif len(suffixes) > 1:
+                            phone_code = root + suffixes[0]
+                        else:
+                            phone_code = root
+
+                    demonyms = c.get("demonyms", {})
+                    eng_dem = demonyms.get("eng", {}).get("m", "")
+                    fra_dem = demonyms.get("fra", {}).get("m", "")
+
+                    nat_es = special_es.get(cca3)
+                    if not nat_es and eng_dem:
+                        if eng_dem.endswith("ian"):
+                            nat_es = eng_dem[:-3] + "ana"
+                        elif eng_dem.endswith("ese"):
+                            nat_es = eng_dem[:-3] + "esa"
+                        elif eng_dem.endswith("ish"):
+                            nat_es = eng_dem[:-3] + "esa"
+                        elif eng_dem.endswith("er"):
+                            nat_es = eng_dem[:-2] + "esa"
+                        else:
+                            nat_es = eng_dem + "a"
+                    if not nat_es:
+                        nat_es = name_es
+
+                    nat_native = nat_es
+                    if native_names:
+                        first_lang = list(native_names.keys())[0]
+                        nat_native = native_names[first_lang].get("common", nat_es)
+
+                    parsed.append({
+                        "iso_alpha3": cca3,
+                        "iso_alpha2": c.get("cca2", ""),
+                        "numeric_code": c.get("ccn3", ""),
+                        "name": name_es,
+                        "name_en": name_en,
+                        "name_fr": name_fr,
+                        "name_native": name_native,
+                        "phone_code": phone_code,
+                        "nationality_es": nat_es,
+                        "nationality_en": eng_dem,
+                        "nationality_fr": fra_dem,
+                        "nationality_native": nat_native
+                    })
+
+                df = pd.DataFrame(parsed)
+                manager = SCD2Manager(target_table="paises", natural_key="iso_alpha3", schema="geo")
+                return manager.upsert(df)
+            except Exception as e:
+                logging.error(f"Failed to read countries from json: {e}. Falling back to default list.")
+
         data = [
             {"iso_alpha3": "MEX", "iso_alpha2": "MX", "numeric_code": "484", "name": "México", "name_en": "Mexico", "name_fr": "Mexique", "name_native": "México", "phone_code": "+52"},
             {"iso_alpha3": "USA", "iso_alpha2": "US", "numeric_code": "840", "name": "Estados Unidos de América", "name_en": "United States of America", "name_fr": "États-Unis d'Amérique", "name_native": "United States", "phone_code": "+1"},

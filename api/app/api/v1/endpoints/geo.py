@@ -10,7 +10,8 @@ router = APIRouter()
 async def obtener_paises(q: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Listar o buscar Países (Catálogo Global)"""
     manager = SCD2Manager(target_table="paises", natural_key="iso_alpha3", schema="geo")
-    return manager.search(search_term=q, limit=250)
+    res = manager.search(search_term=q, limit=300)
+    return sorted(res, key=lambda x: x.get("name", ""))
 
 @router.get("/estados", tags=["Geografía"])
 async def obtener_estados(

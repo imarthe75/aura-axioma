@@ -374,7 +374,11 @@ function GeoCascade() {
               className="civika-select w-full"
             >
               <option value="">Selecciona País...</option>
-              {countries.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {countries.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.nationality_es ? ` - ${c.nationality_es}` : ''}
+                </option>
+              ))}
             </select>
           </div>
 
