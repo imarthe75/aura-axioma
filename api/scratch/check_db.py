@@ -1,29 +1,25 @@
 import os
-from sqlalchemy import create_engine, text
+import hvac
 
-db_url = os.environ.get("DATABASE_URL", "postgresql://admin:casmarts_secure_db_pwd_2026@10.4.3.10:5432/db_core_knowledge")
-# Wait, let's use the local port if 10.4.3.10 is the core DB or if we can run it via docker.
-# Let's inspect docker network or resolve host casmarts-core-db-primary or 10.4.3.10.
-# In docker-compose, casmarts-core-db-primary is on aura-network.
-# Let's see if we can connect to postgresql://admin:casmarts_secure_db_pwd_2026@10.4.3.10:5432/db_core_knowledge
-engine = create_engine(db_url)
+vault_addr = "http://127.0.0.1:8200"
+vault_token = "hvs.6ddxqsuJlRSyuRzOIsXIL9n6"
 
 try:
-    with engine.connect() as conn:
-        print("Connected to DB successfully!")
-        
-        # 1. Check countries count and list
-        res_countries = conn.execute(text("SELECT id, iso_alpha3, name, scd_is_current FROM geo.paises ORDER BY name;"))
-        countries = [dict(row._asdict()) for row in res_countries]
-        print(f"Total countries in geo.paises: {len(countries)}")
-        print("First 10 countries:")
-        for c in countries[:10]:
-            print(c)
+    client = hvac.Client(url=vault_addr, token=vault_token)
+    if client.is_authenticated():
+        print("Connected to Vault!")
+        try:
+            read_response = client.secrets.kv.v2.read_secret_version(path='casmarts/security', mount_point='secret')
+            secrets = read_response['data']['data']
+            print(f"Vault 'casmarts/security' secret keys: {list(secrets.keys())}")
+        except Exception as e:
+            print(f"Could not read 'casmarts/security': {e}")
             
-        # 2. Check if inegi schema exists and localidades count
-        res_localidades = conn.execute(text("SELECT COUNT(*) FROM inegi.localidades;"))
-        count_loc = res_localidades.scalar()
-        print(f"Total localities in inegi.localidades: {count_loc}")
-        
+        try:
+            # Let's list other secrets
+            res = client.secrets.kv.v2.list_secrets(path='', mount_point='secret')
+            print(f"Vault root secret keys: {res.get('data', {}).get('keys', [])}")
+        except Exception as e:
+            print(f"Could not list root: {e}")
 except Exception as e:
-    print(f"Error connecting to DB: {e}")
+    print(f"Vault connection failed: {e}")
