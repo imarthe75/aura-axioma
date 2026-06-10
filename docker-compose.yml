@@ -8,7 +8,7 @@ services:
       REDIS_URL: redis://casmarts-core-cache:6379/2
       AUTHENTIK_URL: https://auth.casmart.internal
       AUTHENTIK_CLIENT_ID: axioma
-      AUTHENTIK_INTERNAL_URL: http://casmarts-core-authentik-server:9000
+      AUTHENTIK_INTERNAL_URL: https://auth.casmart.internal
     ports:
     - 8085:8000
     networks:
