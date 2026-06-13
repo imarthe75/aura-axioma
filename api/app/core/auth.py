@@ -5,13 +5,20 @@ from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from app.core.config import settings
 
+import ssl
+
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.AUTHENTIK_URL}/application/o/token/",
     auto_error=False,
 )
 
+# Bypass SSL validation because the Authentik instance uses a self-signed certificate.
+ssl_context = ssl._create_unverified_context()
+
 _jwks_client = PyJWKClient(
-    f"{settings.AUTHENTIK_INTERNAL_URL}/application/o/{settings.AUTHENTIK_CLIENT_ID}/jwks/"
+    f"{settings.AUTHENTIK_INTERNAL_URL}/application/o/{settings.AUTHENTIK_CLIENT_ID}/jwks/",
+    ssl_context=ssl_context,
+    cache_keys=True
 )
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:

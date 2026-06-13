@@ -4,7 +4,7 @@ services:
     build: ./api
     container_name: aura-axioma-api
     environment:
-      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_db_pwd_2026}@casmarts-core-db-primary:5432/db_core_knowledge
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_pwd}@casmarts-core-db-primary:5432/db_core_knowledge
       REDIS_URL: redis://casmarts-core-cache:6379/2
       AUTHENTIK_URL: https://auth.casmart.internal
       AUTHENTIK_CLIENT_ID: axioma
@@ -27,7 +27,7 @@ services:
     container_name: aura-axioma-worker
     command: celery -A app.core.celery_app worker --loglevel=info
     environment:
-      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_db_pwd_2026}@casmarts-core-db-primary:5432/db_core_knowledge
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_pwd}@casmarts-core-db-primary:5432/db_core_knowledge
       REDIS_URL: redis://casmarts-core-cache:6379/2
     networks:
     - aura-network
@@ -47,7 +47,7 @@ services:
     container_name: aura-axioma-beat
     command: celery -A app.core.celery_app beat --loglevel=info
     environment:
-      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_db_pwd_2026}@casmarts-core-db-primary:5432/db_core_knowledge
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-casmarts_secure_pwd}@casmarts-core-db-primary:5432/db_core_knowledge
       REDIS_URL: redis://casmarts-core-cache:6379/2
     networks:
     - aura-network
